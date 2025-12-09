@@ -1,0 +1,23 @@
+[project]
+name = "radiotrap"
+version = "0.1.0"
+description = "Convert MiniPIX .t3pa event files into images or videos."
+authors = [{name="Your Name"}]
+requires-python = ">=3.9"
+
+dependencies = [
+    "numpy",
+    "pandas",
+    "imageio[tifffile]",
+    "imageio[ffmpeg]",
+    "click",
+    "matplotlib",
+    "tqdm",
+    "opencv-python-headless",
+]
+
+[tool.uv]
+package = true
+
+[project.scripts]
+radiotrap = "radiotrap.main:cli"
