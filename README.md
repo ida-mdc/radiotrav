@@ -153,7 +153,7 @@ Renders a video colored by physics type (Alpha=Red, Beta=Blue, Gamma=Green).
 
 ### `render-yt`
 
-Renders a "Tomographic" view. It scans through the sensor from Left to Right (X=0 to 255).
+Renders a side view (TY). It scans through the sensor from Left to Right (X=0 to 255).
 
   * **Image Width** = Time.
   * **Image Height** = Sensor Y position.
