@@ -1,7 +1,3 @@
-Here is a comprehensive `README.md` designed for users who might not be software engineers but need to use the tool for physics/radiation analysis.
-
------
-
 # RadioTrap: Radiation Event Processor
 
 RadioTrap is a tool for processing, analyzing, and visualizing radiation data from **Timepix3** detectors (files like `.t3pa` or `.txt`).
