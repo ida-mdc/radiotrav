@@ -8,6 +8,17 @@ import networkx as nx
 def find_sequences(df, spatial_radius=20.0, max_time_gap=1e9, exclude_noise=True):
     """
     Finds chains of events of ANY length (A->B, A->B->C, etc).
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        Classification dataframe with at least mean_x, mean_y, mean_t, Cluster_ID, class, total_energy.
+    spatial_radius : float
+        Maximum spatial distance (pixels) between successive events in a chain.
+    max_time_gap : float
+        Maximum allowed time difference between events in a chain, in nanoseconds.
+    exclude_noise : bool
+        If True, chains consisting only of Gamma-class events are removed.
     """
     print("Sorting data by time...")
     df = df.sort_values("mean_t").reset_index(drop=True)

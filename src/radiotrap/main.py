@@ -297,7 +297,7 @@ def render_segmentation_yt(input_file, output_video, bin_size, fps, start_row, n
 @click.argument("input_csv")
 @click.argument("output_chains_csv")
 @click.option("--radius", default=15.0)
-@click.option("--time-window", default=1.0)
+@click.option("--time-window", default=1e9, help="Max time gap between events in a chain (ns).")
 @click.option("--keep-noise", is_flag=True, help="If set, keeps pure Gamma-Gamma chains.")
 def analyze_sequences(input_csv, output_chains_csv, radius, time_window, keep_noise):
     """
@@ -306,10 +306,8 @@ def analyze_sequences(input_csv, output_chains_csv, radius, time_window, keep_no
     click.echo(f"Loading {input_csv}...")
     df = pd.read_csv(input_csv)
 
-    max_ns = time_window * 1e9
-
     # Run new stitching logic
-    chains_df = find_sequences(df, spatial_radius=radius, max_time_gap=max_ns, exclude_noise=not keep_noise)
+    chains_df = find_sequences(df, spatial_radius=radius, max_time_gap=time_window, exclude_noise=not keep_noise)
 
     if len(chains_df) == 0:
         click.echo("No chains found.")

@@ -1,178 +1,254 @@
 # RadioTrap: Radiation Event Processor
 
-RadioTrap is a tool for processing, analyzing, and visualizing radiation data from **Timepix3** detectors (files like `.t3pa` or `.txt`).
+RadioTrap processes, analyzes, and visualizes radiation data from **Timepix3** detectors (e.g. `.t3pa` or derived `.txt` / segmented text files).
 
-It allows you to:
+- **Rendering**: raw event heatmaps to MP4 or TIFF.
+- **Segmentation**: cluster ID assignment for individual tracks.
+- **Classification**: Alpha / Beta / Gamma / Other, with per-cluster metrics.
+- **Sequence analysis**: decay-chain style sequences in space and time.
+- **Reporting**: HTML reports for classification and sequences.
 
-1.  **Render** raw data into videos (MP4) or scientific images (TIFF).
-2.  **Segment** individual particle tracks (clustering).
-3.  **Classify** particles into Alpha, Beta, and Gamma radiation based on shape and energy.
-4.  **Visualize** the results in 3D (XY views) and X-slicing views (Time vs Y).
-5.  **Generate Reports** with detailed statistics and galleries.
+---
 
------
+### 1. Installation
 
-## 1\. Installation (First Time Setup)
+RadioTrap uses **uv** for environment and dependency management.
 
-We use a modern tool called **uv** to handle the Python setup automatically.
+#### 1.1 Install `uv`
 
-### Step 1: Install `uv`
-
-Open your terminal (Command Prompt on Windows, Terminal on Mac/Linux) and paste this command:
-
-**MacOS / Linux:**
+**macOS / Linux:**
 
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-**Windows:**
+**Windows (PowerShell):**
 
 ```powershell
 powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
 
-*Close and reopen your terminal window after installing to ensure it works.*
+Restart your terminal after installing so `uv` is on your `PATH`.
 
-### Step 2: Get the Code
+#### 1.2 Get the code
 
-Navigate to where you want to save the project and clone it:
+Clone this repository and `cd` into the project folder:
 
 ```bash
 git clone https://gitlab.com/ida-mdc/radiotrap.git
 cd radiotrap
 ```
 
-### Step 3: Install Dependencies
+#### 1.3 Install dependencies
 
-Run these two commands inside the `radiotrap` folder. This sets up a virtual environment and installs all necessary libraries (like pandas, opencv, etc.).
+From the project folder:
 
 ```bash
 uv sync
 uv pip install -e .
 ```
 
-*You are now ready to run the software\!*
+The `radiotrap` command-line tool is now available as:
 
------
+```bash
+uv run radiotrap ...
+```
 
-## 2\. Quick Start: The Full Pipeline
+---
 
-Here is the standard workflow to go from raw text data to a fully classified video report.
+### 2. Updating
 
-**Note:** You must always type `uv run radiotrap` to execute commands.
+After pulling code updates or making changes to the source code, update the installed package:
 
-### Phase A: Processing
+```bash
+git pull
+uv sync
+uv pip install -e .
+```
 
-1.  **Segment** the raw pixels into clusters (groups of connected pixels).
+---
 
-      * `--time-window`: Max time gap (ns) to link pixels.
-      * `--spatial-radius`: Max pixel distance (1 or 2) to link pixels.
+### 3. Quick start
 
-    <!-- end list -->
+All commands below are run as `uv run radiotrap <command> ...`.
 
-    ```bash
-    uv run radiotrap segment input_data.txt segmented.txt --time-window 100 --spatial-radius 2
-    ```
+#### Phase A: segmentation and classification
 
-2.  **Classify** the clusters into Alpha/Beta/Gamma.
+1. **Segment** raw events into clusters:
 
-    ```bash
-    uv run radiotrap classify segmented.txt classification.csv
-    ```
+   - `--time-window [FLOAT]`: maximum time gap **in nanoseconds** between pixels in the same cluster.
+   - `--spatial-radius [INT]`: search radius in pixels (typically `1` or `2`).
 
-### Phase B: Visualization (Videos)
+   ```bash
+   uv run radiotrap segment input_events.txt segmented.txt --time-window 100 --spatial-radius 2
+   ```
 
-3.  **Create a Classified Video** (Red=Alpha, Blue=Beta, Green=Gamma).
+2. **Classify** clusters (Alpha / Beta / Gamma / Other) and compute per-cluster metrics:
 
-      * `--scale 4`: Makes the video 4x larger (1024px) so text is readable.
-      * `--bin-size 100`: Accumulates 100ns of data per video frame.
+   ```bash
+   uv run radiotrap classify segmented.txt classification.csv
+   ```
 
-    ```bash
-    uv run radiotrap render-classification segmented.txt classification.csv output_class.mp4 --bin-size 100 --scale 4
-    ```
+3. **Find sequences** (decay-like chains) in the classified clusters:
 
-4.  **Create a Side-View (YT) Video** (Time is width, Y is height).
+   - `--radius [FLOAT]`: maximum spatial distance in pixels between successive clusters in a chain.
+   - `--time-window [FLOAT]`: maximum time difference in **nanoseconds** between successive clusters.
+   - `--keep-noise`: if set, keeps chains that are purely Gamma-Gamma (by default those are removed).
 
-    ```bash
-    uv run radiotrap render-yt segmented.txt classification.csv output_yt.mp4 --bin-size 1000 --scale 2
-    ```
+   ```bash
+   uv run radiotrap analyze-sequences classification.csv chains.csv --radius 15.0 --time-window 1e9
+   ```
 
-### Phase C: Reporting
+#### Phase B: visualization (videos)
 
-5.  Open the file `radiation_report.html` in Chrome or Firefox.
-6.  Click **"Load CSV"** and select the `classification.csv` file generated in Step 2.
-7.  You will see interactive charts, heatmaps, and a gallery of particle thumbnails.
+4. **Classified XY video** (Red = Alpha, Cyan = Beta, Green = Gamma, Gray = Other):
 
------
+   - `--bin-size [FLOAT]`: time per video frame (in the same time units as the input, typically ns).
 
-## 3\. Commands Reference
+   ```bash
+   uv run radiotrap render-classification segmented.txt classification.csv class_xy.mp4 --bin-size 100
+   ```
 
-### `render`
+5. **Side-view YT video** (time vs Y, scanning over X):
 
-Creates a raw visualization of the input file without any clustering.
+   ```bash
+   uv run radiotrap render-yt segmented.txt classification.csv class_yt.mp4 --bin-size 1000
+   ```
 
-  * **Usage:** `uv run radiotrap render [INPUT] [OUTPUT]`
-  * **Options:**
-      * `--format mp4` (default) or `tiff` (for scientific analysis).
-      * `--bin-size`: Time per frame.
+6. **Segmentation QC video** (random colors per cluster):
 
-### `segment`
+   ```bash
+   uv run radiotrap render-segmentation segmented.txt seg_xy.mp4 --bin-size 100
+   ```
 
-Groups raw events into clusters.
+#### Phase C: HTML reports
 
-  * **Usage:** `uv run radiotrap segment [INPUT_TXT] [OUTPUT_TXT]`
-  * **Critical Options:**
-      * `--time-window [FLOAT]`: The most important setting. If your tracks look broken, increase this (e.g., 200). If distinct particles are merging, decrease it.
-      * `--spatial-radius [INT]`: Use `1` for tight clusters, `2` if your sensor has dead pixels or gaps.
+7. **Classification report**:
 
-### `classify`
+   - Open `report/report.html` in a browser.
+   - Click **“Load CSV”** and select `classification.csv`.
 
-Analyzes shapes (roundness, size, energy) to determine particle type.
+8. **Sequence report**:
 
-  * **Usage:** `uv run radiotrap classify [SEGMENTED_TXT] [OUTPUT_CSV]`
-  * **Output:** Creates a CSV with columns for `class`, `energy`, `roundness`, and `thumbnail` images.
+   - Open `report/sequence_report.html` in a browser.
+   - Click **“Load CSV”** and select `chains.csv` from `analyze-sequences`.
 
-### `render-segmentation`
+---
 
-Renders a video where **each cluster has a random color**. Great for checking if your segmentation settings (`time-window`) are working correctly.
+### 4. Command reference
 
-  * **Usage:** `uv run radiotrap render-segmentation [SEGMENTED_TXT] [OUTPUT_MP4]`
+All usages below are invoked as `uv run radiotrap <command> ...`.
 
-### `render-classification`
+#### 4.1 `render`
 
-Renders a video colored by physics type (Alpha=Red, Beta=Blue, Gamma=Green).
+Render raw events (no clustering) to MP4 or TIFF.
 
-  * **Usage:** `uv run radiotrap render-classification [SEGMENTED_TXT] [CLASS_CSV] [OUTPUT_MP4]`
+- **Usage:** `uv run radiotrap render INPUT_FILE OUTPUT_FILE`
+- **Options:**
+  - `--bin-size [FLOAT]` (default: `1e3`): time bin size.
+  - `--fps [INT]` (default: `30`): frames per second for MP4.
+  - `--format [mp4|tiff]` (default: `mp4`).
+  - `--start-row [INT]` (default: `0`): first input row to load.
+  - `--n-rows [INT]` (default: all): number of rows to load.
 
-### `render-yt`
+#### 4.2 `segment`
 
-Renders a side view (TY). It scans through the sensor from Left to Right (X=0 to 255).
+Group raw events into spatio-temporal clusters and write `Cluster_ID` to a text file.
 
-  * **Image Width** = Time.
-  * **Image Height** = Sensor Y position.
-  * **Usage:** `uv run radiotrap render-yt [SEGMENTED_TXT] [CLASS_CSV] [OUTPUT_MP4]`
+- **Usage:** `uv run radiotrap segment INPUT_FILE OUTPUT_TXT --time-window ...`
+- **Options:**
+  - `--time-window [FLOAT]` (required): maximum time gap **in nanoseconds** between pixels in the same cluster.
+  - `--spatial-radius [INT]` (default: `1`): spatial search radius in pixels.
+  - `--start-row [INT]` (default: `0`).
+  - `--n-rows [INT]` (default: all).
 
------
+#### 4.3 `classify`
 
-## 4\. Useful Options for All Commands
+Classify clusters and compute per-cluster statistics.
 
-You can add these flags to almost any command to tweak the output:
+- **Usage:** `uv run radiotrap classify SEGMENTED_TXT OUTPUT_CSV`
+- **Options:**
+  - `--start-row [INT]` (default: `0`).
+  - `--n-rows [INT]` (default: all).
+- **Output CSV:** one row per `Cluster_ID` with columns including:
+  - `class` (Alpha / Beta / Gamma / Other),
+  - timing (`mean_t`),
+  - energy (`total_energy`, `mean_energy`),
+  - shape (`mask_area`, `mask_roundness`, `max_radius`),
+  - geometry (`min_x`, `max_x`, `min_y`, `max_y`, `width`, `height`, `mean_x`, `mean_y`),
+  - `thumbnail_png` (base64 PNG thumbnail).
 
-  * **`--scale [INT]`**
+#### 4.4 `render-segmentation`
 
-      * Upscales the video. Default is `4`.
-      * Use `1` for raw 256x256 pixel output.
-      * Use `4` or `8` for high-quality videos for presentations.
+XY video with a random color per cluster (for checking segmentation).
 
-  * **`--start-row [INT]` and `--n-rows [INT]`**
+- **Usage:** `uv run radiotrap render-segmentation SEGMENTED_TXT OUTPUT_MP4 --bin-size ...`
+- **Options:**
+  - `--bin-size [FLOAT]` (required): time per frame.
+  - `--fps [INT]` (default: `30`).
+  - `--start-row [INT]` (default: `0`).
+  - `--n-rows [INT]` (default: all).
 
-      * **Lifesaver for huge files.** Instead of processing a 50GB file, you can process just a small chunk to test your settings.
-      * Example: Process only the first 10,000 events:
-        ```bash
-        uv run radiotrap render input.txt test.mp4 --n-rows 10000
-        ```
+#### 4.5 `render-classification`
 
-  * **`--fps [INT]`**
+XY video with colors determined by the classification CSV.
 
-      * Frames per second of the output video. Default `30`.
+- **Usage:** `uv run radiotrap render-classification SEGMENTED_TXT CLASS_CSV OUTPUT_MP4 --bin-size ...`
+- **Options:**
+  - `--bin-size [FLOAT]` (required).
+  - `--fps [INT]` (default: `30`).
+  - `--start-row [INT]` (default: `0`).
+  - `--n-rows [INT]` (default: all).
+
+#### 4.6 `render-yt`
+
+Side-view YT video (time vs Y, scanning through X).
+
+- **Usage:** `uv run radiotrap render-yt SEGMENTED_TXT CLASS_CSV OUTPUT_MP4 --bin-size ...`
+- **Options:**
+  - `--bin-size [FLOAT]` (required).
+  - `--fps [INT]` (default: `30`).
+  - `--start-row [INT]` (default: `0`).
+  - `--n-rows [INT]` (default: all).
+
+#### 4.7 `render-segmentation-yt`
+
+Side-view YT video with random colors per cluster (segmentation only).
+
+- **Usage:** `uv run radiotrap render-segmentation-yt SEGMENTED_TXT OUTPUT_MP4 --bin-size ...`
+- **Options:**
+  - `--bin-size [FLOAT]` (required).
+  - `--fps [INT]` (default: `30`).
+  - `--start-row [INT]` (default: `0`).
+  - `--n-rows [INT]` (default: all).
+
+#### 4.8 `analyze-sequences`
+
+Find chains of clusters (A → B → C …) in space and time.
+
+- **Usage:** `uv run radiotrap analyze-sequences CLASS_CSV CHAINS_CSV [options]`
+- **Options:**
+  - `--radius [FLOAT]` (default: `15.0`): spatial radius in pixels.
+  - `--time-window [FLOAT]` (default: `1e9`): maximum allowed gap between events in **nanoseconds**.
+  - `--keep-noise`: if set, keeps chains where all events are classified as Gamma; by default such chains are dropped.
+- **Output CSV (`CHAINS_CSV`):**
+  - One row per cluster in a chain with fields such as `Chain_ID`, `Sequence_Index`, `Cluster_ID`, `Class`, `Energy`, `Time_Abs`, `Time_Delta`, `Dist_Delta`, and selected shape/thumbnail information.
+
+---
+
+### 5. Working with large files
+
+Several commands support partial loading of very large input files:
+
+- **Commands with `--start-row` / `--n-rows`:**
+  - `render`, `segment`, `classify`,
+  - `render-segmentation`, `render-classification`,
+  - `render-yt`, `render-segmentation-yt`.
+
+Example: render only the first 10,000 events to check settings:
+
+```bash
+uv run radiotrap render input.txt test.mp4 --n-rows 10000
+```
+
+Use the same pattern with `segment` and the rendering commands when testing on subsets of large datasets.
