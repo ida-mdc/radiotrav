@@ -7,6 +7,7 @@ from radiotrap.cluster import (
 from radiotrap.io import load_data_as_arrays
 from radiotrap.render import render_tiff_stream, render_video_stream, render_yt_discrete, render_xy_discrete
 from radiotrap.segmentation import segment_events_spatiotemporal
+from radiotrap.sequences import find_sequences
 
 
 # ============================================================
@@ -291,6 +292,35 @@ def render_segmentation_yt(input_file, output_video, bin_size, fps, start_row, n
     render_yt_discrete(t, x, y, cluster_ids, output_video, bin_size, fps, color_lookup=None, t_limits=t_limits)
     click.echo(f"Saved → {output_video}")
 
+
+@cli.command()
+@click.argument("input_csv")
+@click.argument("output_chains_csv")
+@click.option("--radius", default=15.0)
+@click.option("--time-window", default=1.0)
+@click.option("--keep-noise", is_flag=True, help="If set, keeps pure Gamma-Gamma chains.")
+def analyze_sequences(input_csv, output_chains_csv, radius, time_window, keep_noise):
+    """
+    Finds full decay chains (A->B->C...) of any length.
+    """
+    click.echo(f"Loading {input_csv}...")
+    df = pd.read_csv(input_csv)
+
+    max_ns = time_window * 1e9
+
+    # Run new stitching logic
+    chains_df = find_sequences(df, spatial_radius=radius, max_time_gap=max_ns, exclude_noise=not keep_noise)
+
+    if len(chains_df) == 0:
+        click.echo("No chains found.")
+        return
+
+    # Count unique chains
+    n_chains = chains_df["Chain_ID"].nunique()
+    click.echo(f"Found {n_chains} chains involving {len(chains_df)} events.")
+
+    chains_df.to_csv(output_chains_csv, index=False)
+    click.echo(f"Saved -> {output_chains_csv}")
 
 if __name__ == "__main__":
     cli()

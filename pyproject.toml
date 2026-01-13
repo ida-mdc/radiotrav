@@ -13,6 +13,8 @@ dependencies = [
     "click",
     "matplotlib",
     "tqdm",
+    "scipy",
+    "networkx",
     "opencv-python-headless",
 ]
 

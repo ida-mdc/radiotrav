@@ -13,7 +13,7 @@
     <style>
         body { font-family: 'Inter', sans-serif; background-color: #f0f2f5; color: #1e293b; }
         .container { max-width: 1800px; margin: 0 auto; padding: 20px; }
-        .card { background-color: white; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); padding: 24px; margin-bottom: 24px; border: 1px solid #e2e8f0; }
+        .card { background-color: white; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); padding: 24px; margin-bottom: 24px; border: 1px solid #e2e8f0; }
 
         /* Gallery Styles */
         .gallery-grid {
@@ -29,7 +29,7 @@
         .gallery-item:hover { transform: scale(1.1); z-index: 10; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3); border-color: white;}
         .gallery-img {
             width: 100%; height: 100%; object-fit: contain;
-            image-rendering: pixelated; /* Keep pixels sharp */
+            image-rendering: pixelated;
         }
         .gallery-label {
             position: absolute; bottom: 0; left: 0; right: 0;
@@ -38,7 +38,6 @@
             backdrop-filter: blur(2px);
         }
 
-        /* Custom Scrollbar for Gallery */
         .custom-scroll::-webkit-scrollbar { width: 8px; }
         .custom-scroll::-webkit-scrollbar-track { background: #f1f1f1; }
         .custom-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
@@ -56,7 +55,7 @@
         <div class="flex justify-between items-end mb-8">
             <div>
                 <h1 class="text-3xl font-bold text-slate-800">Radiation Event Report</h1>
-                <p class="text-slate-500 mt-1">Visualization of clustered Timepix3 events (Alpha / Beta / Gamma)</p>
+                <p class="text-slate-500 mt-1">Physics-Based Classification & Morphological Analysis</p>
             </div>
             <div class="flex items-center space-x-3 bg-white p-3 rounded-lg shadow-sm border border-slate-200">
                 <span class="text-sm font-semibold text-slate-600">Load CSV:</span>
@@ -68,7 +67,7 @@
 
         <div id="dashboard" class="hidden">
 
-            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+            <div class="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
                 <div class="card !mb-0 flex flex-col justify-center items-center bg-slate-800 text-white border-none">
                     <span class="text-slate-400 text-xs uppercase font-bold tracking-wider">Total Events</span>
                     <span class="text-4xl font-bold mt-2" id="stat-total">-</span>
@@ -85,28 +84,33 @@
                     <span class="text-green-800 text-xs uppercase font-bold tracking-wider">Gammas</span>
                     <span class="text-4xl font-bold mt-2 text-green-600" id="stat-gamma">-</span>
                 </div>
+                <div class="card !mb-0 flex flex-col justify-center items-center bg-gray-50 border-gray-200">
+                    <span class="text-gray-600 text-xs uppercase font-bold tracking-wider">Other</span>
+                    <span class="text-4xl font-bold mt-2 text-gray-600" id="stat-other">-</span>
+                </div>
             </div>
 
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
-                <div class="card">
+                <div class="card col-span-2">
                     <div class="flex justify-between items-center mb-4">
-                        <h3 class="text-lg font-bold text-slate-700">Classification Space</h3>
-                        <span class="text-xs text-slate-500 bg-slate-100 px-2 py-1 rounded">Validation</span>
+                        <h3 class="text-lg font-bold text-slate-700">Particle Morphology Space</h3>
+                        <span class="text-xs text-slate-500 bg-slate-100 px-2 py-1 rounded">Thickness vs. Roundness</span>
                     </div>
-                    <p class="text-xs text-slate-500 mb-2">
-                        Comparing <strong>Roundness</strong> (Aspect Ratio) vs. <strong>Energy Density</strong> (Mean Energy).
-                        Alphas should be high density + high roundness.
-                    </p>
                     <div id="scatter-classification" class="h-[400px]"></div>
                 </div>
 
-                <div class="card">
+                <div class="card col-span-1">
                     <div class="flex justify-between items-center mb-4">
-                        <h3 class="text-lg font-bold text-slate-700">Sensor Hitmap</h3>
-                        <span class="text-xs text-slate-500 bg-slate-100 px-2 py-1 rounded">Physical (X,Y)</span>
+                        <h3 class="text-lg font-bold text-slate-700">Group Statistics</h3>
+                        <select id="bar-metric" class="text-sm border p-1 rounded bg-slate-50">
+                            <option value="total_energy_sum">Total Energy Deposited (Sum)</option>
+                            <option value="count">Event Count</option>
+                            <option value="mean_energy_avg">Avg Energy Density</option>
+                            <option value="mask_roundness_avg">Avg Roundness</option>
+                        </select>
                     </div>
-                    <div id="scatter-sensor" class="h-[400px]"></div>
+                    <div id="bar-chart" class="h-[400px]"></div>
                 </div>
             </div>
 
@@ -120,13 +124,22 @@
                     <div class="flex justify-between items-center mb-4">
                         <h3 class="text-lg font-bold text-slate-700">Property Distributions</h3>
                         <select id="dist-metric" class="text-sm border-slate-300 rounded p-1 bg-slate-50 border">
-                            <option value="total_energy">Total Energy (ToT)</option>
-                            <option value="area">Size (Pixels)</option>
-                            <option value="aspect_ratio">Roundness</option>
+                            <option value="total_energy">Total Energy</option>
+                            <option value="mask_roundness">Roundness</option>
+                            <option value="max_radius">Thickness (Radius)</option>
+                            <option value="mask_area">Area (px)</option>
                         </select>
                     </div>
                     <div id="violin-chart" class="h-[300px]"></div>
                 </div>
+            </div>
+
+            <div class="card">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-lg font-bold text-slate-700">Sensor Hitmap</h3>
+                    <span class="text-xs text-slate-500">Spatial Distribution (X,Y)</span>
+                </div>
+                <div id="scatter-sensor" class="h-[400px]"></div>
             </div>
 
             <div class="card">
@@ -138,6 +151,7 @@
                             <option value="Alpha">Alpha Only</option>
                             <option value="Beta">Beta Only</option>
                             <option value="Gamma">Gamma Only</option>
+                            <option value="Other">Other</option>
                         </select>
                         <select id="gallery-sort" class="text-sm border p-2 rounded bg-slate-50">
                             <option value="energy_desc">Highest Energy</option>
@@ -159,6 +173,13 @@
 
     <script>
         let globalData = [];
+
+        const colors = {
+            'Alpha': '#dc2626', // Red
+            'Beta': '#2563eb',  // Blue
+            'Gamma': '#16a34a', // Green
+            'Other': '#9ca3af'  // Gray
+        };
 
         // --- 1. LOAD DATA ---
         document.getElementById('csv-file-input').addEventListener('change', function(e) {
@@ -190,45 +211,41 @@
             });
         });
 
-        // --- 2. PROCESS DATA (Fixed for Large Files) ---
+        // --- 2. PROCESS DATA ---
         function processData(data) {
             // 1. Filter valid rows
             globalData = data.filter(r => r.Cluster_ID !== undefined && r.mean_t !== null);
 
             console.log(`Loaded ${globalData.length} rows.`);
 
-            // 2. Normalize Time (Fixing the Stack Overflow)
+            // 2. Normalize Time (Loop to avoid stack overflow)
             if (globalData.length > 0) {
-                // Find min manually to avoid stack overflow with spread operator
                 let t0 = globalData[0].mean_t;
                 for (let i = 1; i < globalData.length; i++) {
                     if (globalData[i].mean_t < t0) t0 = globalData[i].mean_t;
                 }
-
-                // Apply relative time
                 for (let i = 0; i < globalData.length; i++) {
-                    globalData[i].rel_time_sec = (globalData[i].mean_t - t0) / 1e9; // convert ns to sec
+                    globalData[i].rel_time_sec = (globalData[i].mean_t - t0) / 1e9;
+                    // Ensure class exists
+                    if (!globalData[i].class) globalData[i].class = 'Other';
                 }
             }
 
-            // 3. Downsample for Heavy Plots (Optional but Recommended)
-            // If we have >20k points, charts might lag. We create a subset for the scatter plots.
-            const SAMPLE_LIMIT = 20000;
+            // 3. Downsample for Scatter Plots
+            const SAMPLE_LIMIT = 15000;
             const step = Math.ceil(globalData.length / SAMPLE_LIMIT);
             const sampledData = (step > 1)
                 ? globalData.filter((_, i) => i % step === 0)
                 : globalData;
 
-            // Render components
             renderStats();
-            // Pass sampled data to heavy plots to keep UI snappy
             renderClassificationPlot(sampledData);
             renderSensorMap(sampledData);
-
-            renderTimeline();      // Histogram handles large data fine
-            renderDistributions(); // Boxplots handle large data fine
-            renderGallery();       // Gallery is already sliced to top 200
-            renderTable();         // Grid.js handles pagination fine
+            renderTimeline();
+            renderDistributions();
+            renderBarChart();
+            renderGallery();
+            renderTable();
         }
 
         // --- 3. RENDER STATS ---
@@ -244,27 +261,29 @@
             document.getElementById('stat-alpha').textContent = counts.Alpha.toLocaleString();
             document.getElementById('stat-beta').textContent = counts.Beta.toLocaleString();
             document.getElementById('stat-gamma').textContent = counts.Gamma.toLocaleString();
+            document.getElementById('stat-other').textContent = counts.Other.toLocaleString();
         }
 
         // --- 4. CHARTS ---
-        const colors = {
-            'Alpha': '#dc2626', // Red
-            'Beta': '#2563eb',  // Blue
-            'Gamma': '#16a34a', // Green
-            'Other': '#9ca3af'  // Gray
-        };
 
         function renderClassificationPlot(plotData) {
+            // Prefer new metrics if available, fallback to old
+            const hasNewMetrics = plotData.length > 0 && plotData[0].max_radius !== undefined;
+            const xField = hasNewMetrics ? 'mask_roundness' : 'aspect_ratio';
+            const yField = hasNewMetrics ? 'max_radius' : 'mean_energy';
+            const xLabel = hasNewMetrics ? 'Geometric Roundness' : 'Aspect Ratio';
+            const yLabel = hasNewMetrics ? 'Thickness (Max Radius)' : 'Mean Energy';
+
             const traces = [];
-            ['Alpha', 'Beta', 'Gamma'].forEach(cls => {
+            ['Alpha', 'Beta', 'Gamma', 'Other'].forEach(cls => {
                 const subset = plotData.filter(d => d.class === cls);
                 if (subset.length === 0) return;
 
                 traces.push({
-                    x: subset.map(d => d.aspect_ratio),
-                    y: subset.map(d => d.mean_energy), // Energy Density
+                    x: subset.map(d => d[xField]),
+                    y: subset.map(d => d[yField]),
                     mode: 'markers',
-                    type: 'scattergl', // Use WebGL for speed
+                    type: 'scattergl',
                     name: cls,
                     marker: { color: colors[cls], size: 4, opacity: 0.6 }
                 });
@@ -272,29 +291,59 @@
 
             const layout = {
                 margin: { t: 20, r: 20, b: 40, l: 50 },
-                xaxis: { title: 'Roundness (Aspect Ratio)', range: [0, 1.1] },
-                yaxis: { title: 'Mean Energy (Density)', type: 'log' }, // Log scale often better for energy
-                hovermode: 'closest',
-                paper_bgcolor: 'rgba(0,0,0,0)',
-                plot_bgcolor: 'rgba(0,0,0,0)'
+                xaxis: { title: xLabel, range: [0, 1.1] },
+                yaxis: { title: yLabel }, // thickness usually linear is fine
+                hovermode: 'closest', paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)'
             };
-
             Plotly.newPlot('scatter-classification', traces, layout);
         }
 
+        function renderBarChart() {
+            const metricKey = document.getElementById('bar-metric').value; // e.g. "total_energy_sum"
+            const [field, op] = metricKey.split('_').slice(0, -1).join('_') ? [metricKey.split('_').slice(0, -1).join('_'), metricKey.split('_').pop()] : [metricKey, 'count'];
+
+            // Calculate Aggregates
+            const classes = ['Alpha', 'Beta', 'Gamma', 'Other'];
+            const values = classes.map(cls => {
+                const subset = globalData.filter(d => d.class === cls);
+                if (subset.length === 0) return 0;
+
+                if (metricKey === 'count') return subset.length;
+
+                const sum = subset.reduce((acc, curr) => acc + (curr[field] || 0), 0);
+                if (op === 'sum') return sum;
+                if (op === 'avg') return sum / subset.length;
+                return 0;
+            });
+
+            const trace = {
+                x: classes,
+                y: values,
+                type: 'bar',
+                marker: { color: classes.map(c => colors[c]) }
+            };
+
+            const layout = {
+                margin: { t: 20, r: 20, b: 40, l: 50 },
+                yaxis: { title: document.getElementById('bar-metric').selectedOptions[0].text },
+                paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)'
+            };
+            Plotly.newPlot('bar-chart', [trace], layout);
+        }
+        document.getElementById('bar-metric').addEventListener('change', renderBarChart);
+
         function renderSensorMap(plotData) {
-            // Simple X/Y plot
             const trace = {
                 x: plotData.map(d => d.mean_x),
                 y: plotData.map(d => d.mean_y),
                 mode: 'markers',
-                type: 'scattergl', // Use WebGL for speed
+                type: 'scattergl',
                 marker: {
                     size: 3,
                     color: plotData.map(d => colors[d.class] || colors.Other),
                     opacity: 0.6
                 },
-                text: plotData.map(d => `ID: ${d.Cluster_ID}<br>Class: ${d.class}`),
+                text: plotData.map(d => `ID: ${d.Cluster_ID}`),
                 hoverinfo: 'text'
             };
 
@@ -302,19 +351,15 @@
                 margin: { t: 10, r: 10, b: 30, l: 30 },
                 xaxis: { range: [0, 256], title: 'X', showgrid: false },
                 yaxis: { range: [0, 256], title: 'Y', scaleanchor: "x", scaleratio: 1, showgrid: false },
-                paper_bgcolor: 'rgba(0,0,0,0)',
-                plot_bgcolor: '#f8fafc',
+                paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: '#f8fafc',
                 shapes: [{ type: 'rect', x0: 0, y0: 0, x1: 256, y1: 256, line: { color: '#ccc' } }]
             };
-
             Plotly.newPlot('scatter-sensor', [trace], layout);
         }
 
         function renderTimeline() {
-            // Bin by 1 second (or auto)
-            // Simple histogram of arrival times
             const traces = [];
-            ['Alpha', 'Beta', 'Gamma'].forEach(cls => {
+            ['Alpha', 'Beta', 'Gamma', 'Other'].forEach(cls => {
                 const subset = globalData.filter(d => d.class === cls);
                 traces.push({
                     x: subset.map(d => d.rel_time_sec),
@@ -324,47 +369,37 @@
                     opacity: 0.75
                 });
             });
-
             const layout = {
-                barmode: 'stack',
-                margin: { t: 20, r: 20, b: 40, l: 50 },
-                xaxis: { title: 'Time (seconds)' },
-                yaxis: { title: 'Events per Bin' },
-                paper_bgcolor: 'rgba(0,0,0,0)',
-                plot_bgcolor: 'rgba(0,0,0,0)'
+                barmode: 'stack', margin: { t: 20, r: 20, b: 40, l: 50 },
+                xaxis: { title: 'Time (seconds)' }, yaxis: { title: 'Events per Bin' },
+                paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)'
             };
-
             Plotly.newPlot('timeline-chart', traces, layout);
         }
 
         function renderDistributions() {
             const metric = document.getElementById('dist-metric').value;
             const traces = [];
-
-            ['Alpha', 'Beta', 'Gamma'].forEach(cls => {
+            ['Alpha', 'Beta', 'Gamma', 'Other'].forEach(cls => {
                 const subset = globalData.filter(d => d.class === cls);
                 if (subset.length === 0) return;
 
+                // Fallback if metric missing in CSV (e.g. using old CSV with new logic)
+                const dataPoints = subset.map(d => d[metric] !== undefined ? d[metric] : 0);
+
                 traces.push({
-                    y: subset.map(d => d[metric]),
-                    type: 'violin',
-                    name: cls,
-                    box: { visible: true },
-                    line: { color: colors[cls] },
-                    meanline: { visible: true }
+                    y: dataPoints,
+                    type: 'violin', name: cls, box: { visible: true },
+                    line: { color: colors[cls] }, meanline: { visible: true }
                 });
             });
-
             const layout = {
                 margin: { t: 20, r: 20, b: 40, l: 50 },
-                yaxis: { title: metric.replace('_', ' ') },
-                paper_bgcolor: 'rgba(0,0,0,0)',
-                plot_bgcolor: 'rgba(0,0,0,0)'
+                yaxis: { title: metric.replace(/_/g, ' ') },
+                paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)'
             };
-
             Plotly.newPlot('violin-chart', traces, layout);
         }
-
         document.getElementById('dist-metric').addEventListener('change', renderDistributions);
 
         // --- 5. GALLERY ---
@@ -373,35 +408,29 @@
             const filterClass = document.getElementById('gallery-filter').value;
             const sortMode = document.getElementById('gallery-sort').value;
 
-            // Filter
             let subset = globalData;
             if (filterClass !== 'all') {
                 subset = globalData.filter(d => d.class === filterClass);
             }
 
-            // Sort
+            // Robust Sort
             subset.sort((a, b) => {
-                if (sortMode === 'energy_desc') return b.total_energy - a.total_energy;
-                if (sortMode === 'size_desc') return b.area - a.area;
-                if (sortMode === 'roundness_desc') return b.aspect_ratio - a.aspect_ratio;
-                return 0;
+                const valA = sortMode.includes('energy') ? a.total_energy : (sortMode.includes('size') ? a.mask_area || a.area : a.mask_roundness || a.aspect_ratio);
+                const valB = sortMode.includes('energy') ? b.total_energy : (sortMode.includes('size') ? b.mask_area || b.area : b.mask_roundness || b.aspect_ratio);
+                return valB - valA; // Descending
             });
 
-            // Limit to top 200 to prevent DOM lag
             const displaySet = subset.slice(0, 200);
 
             container.innerHTML = displaySet.map(d => {
-                // Determine badge class
                 const bgClass = `bg-${d.class}`;
-
-                // If no thumbnail, use placeholder
-                const imgSrc = d.thumbnail_png || '';
-                // Fix base64 string if Python forgot prefix (sometimes happens)
-                const validSrc = imgSrc.startsWith('data:image') ? imgSrc : 'data:image/png;base64,' + imgSrc;
+                let rawSrc = d.thumbnail_png || d.thumbnail || '';
+                let imgSrc = rawSrc.startsWith('data:image') ? rawSrc : 'data:image/png;base64,' + rawSrc;
+                if (!rawSrc) imgSrc = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjMzMzIi8+PC9zdmc+';
 
                 return `
-                    <div class="gallery-item cursor-pointer" onclick="alert('Cluster ID: ${d.Cluster_ID}\\nEnergy: ${d.total_energy}\\nSize: ${d.area}')">
-                        <img src="${validSrc}" class="gallery-img" loading="lazy">
+                    <div class="gallery-item cursor-pointer" onclick="alert('ID: ${d.Cluster_ID}\\nE: ${d.total_energy}\\nR: ${d.mask_roundness?.toFixed(2)}')">
+                        <img src="${imgSrc}" class="gallery-img" loading="lazy">
                         <div class="gallery-label">
                             <span class="text-[9px] uppercase font-bold px-1 rounded ${bgClass}">${d.class}</span>
                             <div class="mt-1">${Math.round(d.total_energy)} keV</div>
@@ -410,29 +439,24 @@
                 `;
             }).join('');
         }
-
         document.getElementById('gallery-filter').addEventListener('change', renderGallery);
         document.getElementById('gallery-sort').addEventListener('change', renderGallery);
 
         // --- 6. DATA TABLE ---
         let gridInstance = null;
-
-        // Helper to safely format numbers, returning 'N/A' if null/undefined
         function safeFixed(val, digits) {
-            return (val !== null && val !== undefined && typeof val === 'number')
-                ? val.toFixed(digits)
-                : '0.00';
+            return (val !== null && val !== undefined && typeof val === 'number') ? val.toFixed(digits) : '0.00';
         }
 
         function renderTable() {
             const displayData = globalData.map(d => [
                 d.Cluster_ID,
-                d.class || 'Unknown', // Fallback for missing class
+                d.class,
                 safeFixed(d.rel_time_sec, 3),
                 safeFixed(d.total_energy, 1),
-                d.area || 0,
-                safeFixed(d.aspect_ratio, 2),
-                `(${Math.round(d.mean_x || 0)}, ${Math.round(d.mean_y || 0)})`
+                d.mask_area || d.area, // Prefer mask_area
+                safeFixed(d.mask_roundness || d.aspect_ratio, 2),
+                safeFixed(d.max_radius, 1) // Thickness
             ]);
 
             if (gridInstance) {
@@ -441,29 +465,16 @@
                 gridInstance = new gridjs.Grid({
                     columns: [
                         'ID',
-                        { name: 'Class', formatter: (cell) => gridjs.html(`<span class="font-bold ${cell=='Alpha'?'text-red-600':cell=='Beta'?'text-blue-600':'text-green-600'}">${cell}</span>`) },
-                        'Time (s)',
-                        'Energy',
-                        'Size (px)',
-                        'Roundness',
-                        'Pos (x,y)'
+                        { name: 'Class', formatter: (cell) => gridjs.html(`<span class="font-bold ${cell=='Alpha'?'text-red-600':cell=='Beta'?'text-blue-600':cell=='Gamma'?'text-green-600':'text-gray-500'}">${cell}</span>`) },
+                        'Time (s)', 'Energy', 'Area', 'Roundness', 'Thick.'
                     ],
                     data: displayData,
                     pagination: { limit: 10 },
-                    search: true,
-                    sort: true,
-                    resizable: true,
-                    style: {
-                        table: { 'font-size': '13px' },
-                        th: { 'background-color': '#f8fafc' }
-                    }
+                    search: true, sort: true, resizable: true,
+                    style: { table: { 'font-size': '13px' }, th: { 'background-color': '#f8fafc' } }
                 }).render(document.getElementById("grid-table"));
             }
         }
-
-        // Init empty table
-        renderTable();
-
     </script>
 </body>
 </html>

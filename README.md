@@ -88,8 +88,6 @@ Here is the standard workflow to go from raw text data to a fully classified vid
       * `--scale 4`: Makes the video 4x larger (1024px) so text is readable.
       * `--bin-size 100`: Accumulates 100ns of data per video frame.
 
-    <!-- end list -->
-
     ```bash
     uv run radiotrap render-classification segmented.txt classification.csv output_class.mp4 --bin-size 100 --scale 4
     ```
