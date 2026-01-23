@@ -103,14 +103,20 @@ def segment(input_file, output_txt, time_window, spatial_radius, start_row, n_ro
     click.echo(f"Segmenting {len(t)} events...")
     cluster_ids = segment_events_spatiotemporal(t, x, y, time_window, spatial_radius)
 
-    # Save
+    # Save, embedding segmentation parameters as metadata columns (constant per row)
     click.echo(f"Saving to {output_txt}...")
     df_out = pd.DataFrame({
         "arrival_time": t,
         "x_pos": x,
         "y_pos": y,
         "ToT": tot,
-        "Cluster_ID": cluster_ids
+        "Cluster_ID": cluster_ids,
+        # Embedded segmentation metadata
+        "seg_time_window_ns": float(time_window),
+        "seg_spatial_radius_px": int(spatial_radius),
+        "seg_input_file": input_file,
+        "seg_start_row": int(start_row),
+        "seg_n_rows": -1 if n_rows is None else int(n_rows),
     })
     df_out.to_csv(output_txt, sep=" ", index=False)
     click.echo("Done.")
@@ -156,6 +162,46 @@ def classify(input_file, output_csv, start_row, n_rows):
 
     # Run
     stats = classify_clusters(df_calc)
+
+    # ------------------------------------------------------------------
+    # Embed segmentation + classification context as metadata columns.
+    # These are constant per row and safe for all downstream tools.
+    # ------------------------------------------------------------------
+    meta_values = {}
+
+    # 1) Try to propagate segmentation metadata from the segmented TXT, if present.
+    # Read the full file to get metadata columns (they're constant per row anyway)
+    try:
+        # Read just the first few rows to get metadata (faster than full file)
+        meta_df = pd.read_csv(input_file, sep=r"\s+", nrows=10, engine="python")
+        # Normalize column names (remove quotes, dots, etc.) to match what segment writes
+        meta_df.columns = meta_df.columns.str.replace('"', '').str.replace("'", "").str.replace(".", "_").str.strip()
+    except Exception as e:
+        click.echo(f"Warning: Could not read segmentation metadata: {e}")
+        meta_df = None
+
+    if meta_df is not None and len(meta_df) > 0:
+        for col in [
+            "seg_time_window_ns",
+            "seg_spatial_radius_px",
+            "seg_input_file",
+            "seg_start_row",
+            "seg_n_rows",
+        ]:
+            if col in meta_df.columns:
+                # Get the first non-null value (should be the same for all rows)
+                val = meta_df[col].dropna()
+                if len(val) > 0:
+                    meta_values[col] = val.iloc[0]
+
+    # 2) Add classification call context
+    meta_values["classify_input_file"] = input_file
+    meta_values["classify_start_row"] = int(start_row)
+    meta_values["classify_n_rows"] = -1 if n_rows is None else int(n_rows)
+
+    # Add all metadata columns to stats DataFrame (constant for all rows)
+    for k, v in meta_values.items():
+        stats[k] = v
 
     click.echo(f"Saving classification summary to {output_csv}...")
     stats.to_csv(output_csv, index=True)
