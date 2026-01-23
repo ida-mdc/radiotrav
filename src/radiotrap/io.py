@@ -1,15 +1,34 @@
 import numpy as np
 import pandas as pd
 
-import pandas as pd
-import numpy as np
+
+def detect_file_type(path):
+    """
+    Auto-detect file type from file extension.
+    Returns 't3pa' for .t3pa/.t3p files, 'txt' otherwise.
+    """
+    lower = path.lower()
+    if lower.endswith(".t3pa") or lower.endswith(".t3p"):
+        return "t3pa"
+    return "txt"
 
 
-def load_data_as_arrays(path, ftoa_factor=1.0, file_type='t3pa', start_row=0, n_rows=None):
+def load_data_as_arrays(path, ftoa_factor=1.0, file_type=None, start_row=0, n_rows=None):
     """
     Loads a specific chunk of rows from the file.
+    
+    Args:
+        path: Path to the input file
+        ftoa_factor: Fine time of arrival factor (not used for t3pa, kept for compatibility)
+        file_type: 't3pa' or 'txt'. If None, auto-detected from file extension.
+        start_row: Starting row index
+        n_rows: Number of rows to load (None = all)
     """
-    print(f"Loading {n_rows if n_rows else 'all'} rows starting at {start_row}...")
+    # Auto-detect file type if not provided
+    if file_type is None:
+        file_type = detect_file_type(path)
+    
+    print(f"Loading {n_rows if n_rows else 'all'} rows starting at {start_row} from {file_type} file...")
 
     # 1. Read just the header to get column names
     if file_type == 't3pa':
@@ -46,7 +65,9 @@ def load_data_as_arrays(path, ftoa_factor=1.0, file_type='t3pa', start_row=0, n_
         matrix_col = "Matrix Index" if "Matrix Index" in df.columns else "Matrix"
         x = (df[matrix_col] % 256).astype(np.int32).values
         y = (df[matrix_col] // 256).astype(np.int32).values
-        t = (df["ToA"] + df["FToA"] * ftoa_factor).values
+        # Match R script conversion: arrival_time = (ToA * 25) - ((FToA * 25)/16)
+        # Factors originate from Advacam PIXET Wiki
+        t = (df["ToA"] * 25.0 - (df["FToA"] * 25.0 / 16.0)).values
 
     elif file_type == 'txt':
         # Clean headers (remove quotes/dots)

@@ -24,8 +24,8 @@
       <div class="card flex flex-col gap-2">
         <div class="text-xs font-semibold muted">LOAD FILES</div>
         <div class="flex flex-col gap-2">
-          <label class="text-sm">Events file (segmented; needs time/x/y, ideally Cluster_ID)</label>
-          <input id="eventsFile" type="file" class="text-sm" />
+          <label class="text-sm">Events file (TXT with time/x/y, or raw .t3pa; Cluster_ID optional)</label>
+          <input id="eventsFile" type="file" accept=".txt,.t3pa,.t3p" class="text-sm" />
           <label class="text-sm">Classification CSV (optional; for class colors)</label>
           <input id="classFile" type="file" accept=".csv" class="text-sm" />
         </div>
@@ -77,7 +77,7 @@
             <div id="speedLabel" class="text-xs mono">1.0×</div>
           </div>
           <!-- 0.25× .. 4× -->
-          <input id="speed" type="range" min="0.25" max="4" step="0.05" value="1" />
+          <input id="speed" type="range" min="0.1" max="2" step="0.05" value="1" />
         </div>
 
         <div class="text-sm font-semibold mt-4 mb-2">Stats</div>
@@ -139,11 +139,18 @@
     }
 
     function normalizeColumns(rows) {
-      // Handle quoted headers etc.
+      // Handle quoted headers, dots, and whitespace in column names.
+      // This lets us support both:
+      // - TXT export columns like "arrival_time", "x_pos", "y_pos"
+      // - T3PA columns like "Matrix Index", "ToA", "FToA", "ToT"
       return rows.map(r => {
         const out = {};
         for (const [k, v] of Object.entries(r)) {
-          const kk = String(k).replace(/"/g, "").replace(/\./g, "_").trim();
+          const kk = String(k)
+            .replace(/"/g, "")
+            .replace(/\./g, "_")
+            .replace(/\s+/g, "_")
+            .trim();
           out[kk] = v;
         }
         return out;
@@ -409,9 +416,33 @@
       const t = [], x = [], y = [], tot = [], cid = [];
 
       for (const r of rows) {
-        const ti = pick(r, ["arrival_time", "time", "ToA", "mean_t"], null);
-        const xi = pick(r, ["x_pos", "x"], null);
-        const yi = pick(r, ["y_pos", "y"], null);
+        // --- Time ---
+        // TXT: arrival_time / time
+        // T3PA: ToA + FToA -> match collaborator R conversion:
+        //   arrival_time = (ToA * 25) - ((FToA * 25)/16)
+        let ti = pick(r, ["arrival_time", "time", "mean_t"], null);
+        if (ti === null) {
+          const toa = pick(r, ["ToA"], null);
+          const ftoa = pick(r, ["FToA"], 0);
+          if (toa !== null) {
+            ti = (Number(toa) * 25.0) - ((Number(ftoa) * 25.0) / 16.0);
+          }
+        }
+
+        // --- X/Y ---
+        // TXT: x_pos/y_pos or x/y
+        // T3PA: Matrix Index (or Matrix_Index after normalization)
+        let xi = pick(r, ["x_pos", "x"], null);
+        let yi = pick(r, ["y_pos", "y"], null);
+        if (xi === null || yi === null) {
+          const mi = pick(r, ["Matrix_Index", "MatrixIndex", "Matrix"], null);
+          if (mi !== null) {
+            const m = Number(mi);
+            yi = Math.trunc(m / 256);
+            xi = m - (yi * 256);
+          }
+        }
+
         if (ti === null || xi === null || yi === null) continue;
         t.push(Number(ti));
         x.push(Number(xi));
@@ -466,6 +497,11 @@
       winSlider.max = String(Math.max(1, Math.floor(tMax / 20)));
       winSlider.step = String(Math.max(1, Math.floor((tMax / 20) / 2000)));
       winSlider.value = String(win);
+
+      // If the file doesn't have Cluster_IDs (e.g. raw .t3pa), default the mode away from "classification".
+      if (!events.cid) {
+        document.getElementById("mode").value = (events.tot && events.tot.length) ? "energy" : "density";
+      }
 
       await renderPlot();
     }

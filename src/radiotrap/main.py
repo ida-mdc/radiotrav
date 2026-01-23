@@ -4,8 +4,13 @@ import pandas as pd
 from radiotrap.cluster import (
     classify_clusters,
 )
-from radiotrap.io import load_data_as_arrays
-from radiotrap.render import render_tiff_stream, render_video_stream, render_yt_discrete, render_xy_discrete
+from radiotrap.io import load_data_as_arrays, detect_file_type
+from radiotrap.render import (
+    render_tiff_stream,
+    render_video_stream,
+    render_yt_discrete,
+    render_xy_discrete,
+)
 from radiotrap.segmentation import segment_events_spatiotemporal
 from radiotrap.sequences import find_sequences
 
@@ -72,7 +77,7 @@ def render(input_file, output_file, bin_size, fps, out_format, start_row, n_rows
     """
     Render raw events (TXT or T3PA).
     """
-    t, x, y, tot = load_data_as_arrays(input_file, 1.0, 'txt', start_row, n_rows)
+    t, x, y, tot = load_data_as_arrays(input_file, 1.0, None, start_row, n_rows)
 
     if out_format == "tiff":
         render_tiff_stream(t, x, y, output_file, bin_size)
@@ -93,7 +98,7 @@ def segment(input_file, output_txt, time_window, spatial_radius, start_row, n_ro
     """
     Groups neighbors (Time + Space) and saves Cluster_ID.
     """
-    t, x, y, tot = load_data_as_arrays(input_file, 1.0, 'txt', start_row, n_rows)
+    t, x, y, tot = load_data_as_arrays(input_file, 1.0, None, start_row, n_rows)
 
     click.echo(f"Segmenting {len(t)} events...")
     cluster_ids = segment_events_spatiotemporal(t, x, y, time_window, spatial_radius)
@@ -121,8 +126,20 @@ def classify(input_file, output_csv, start_row, n_rows):
     """
     Classifies clusters and saves detailed stats + thumbnails.
     """
+    file_type = detect_file_type(input_file)
+    if file_type != "txt":
+        raise click.ClickException(
+            "The 'classify' command requires a TXT file containing a 'Cluster_ID' column "
+            "(i.e. the output of 'radiotrap segment'). "
+            f"Got: {input_file}\n"
+            "Run:\n"
+            "  radiotrap segment <input.t3pa|input.txt> segmented.txt --time-window <...>\n"
+            "Then:\n"
+            "  radiotrap classify segmented.txt classification.csv"
+        )
+
     # Load data normally
-    t, x, y, tot = load_data_as_arrays(input_file, 1.0, 'txt', start_row, n_rows)
+    t, x, y, tot = load_data_as_arrays(input_file, 1.0, None, start_row, n_rows)
 
     # Load IDs separately
     cluster_ids = load_cluster_ids_chunk(input_file, start_row, n_rows)
@@ -154,7 +171,7 @@ def classify(input_file, output_csv, start_row, n_rows):
 @click.option("--start-row", default=0)
 @click.option("--n-rows", default=None, type=int)
 def render(input_file, output_file, bin_size, fps, out_format, start_row, n_rows):
-    t, x, y, tot = load_data_as_arrays(input_file, 1.0, 'txt', start_row, n_rows)
+    t, x, y, tot = load_data_as_arrays(input_file, 1.0, None, start_row, n_rows)
     if out_format == "tiff":
         render_tiff_stream(t, x, y, output_file, bin_size)
     else:
@@ -174,7 +191,15 @@ def render_segmentation(input_file, output_video, bin_size, fps, start_row, n_ro
     """
     Renders XY video with random colors (Segmentation).
     """
-    t, x, y, _ = load_data_as_arrays(input_file, 1.0, 'txt', start_row, n_rows)
+    file_type = detect_file_type(input_file)
+    if file_type != "txt":
+        raise click.ClickException(
+            "The 'render-segmentation' command requires a TXT file containing a 'Cluster_ID' column "
+            "(i.e. the output of 'radiotrap segment'). "
+            f"Got: {input_file}"
+        )
+
+    t, x, y, _ = load_data_as_arrays(input_file, 1.0, None, start_row, n_rows)
     cluster_ids = load_cluster_ids_chunk(input_file, start_row, n_rows)
 
     local_sort = np.argsort(t)
@@ -201,6 +226,14 @@ def render_classification(input_events_txt, input_class_csv, output_video, bin_s
     """
     Renders XY video with class colors.
     """
+    file_type = detect_file_type(input_events_txt)
+    if file_type != "txt":
+        raise click.ClickException(
+            "The 'render-classification' command requires a segmented TXT file containing a 'Cluster_ID' column "
+            "(i.e. the output of 'radiotrap segment'), plus the classification CSV from 'radiotrap classify'. "
+            f"Got: {input_events_txt}"
+        )
+
     palette = {
         "Alpha": np.array([220, 20, 20], dtype=np.uint8),
         "Beta": np.array([20, 180, 220], dtype=np.uint8),
@@ -215,7 +248,7 @@ def render_classification(input_events_txt, input_class_csv, output_video, bin_s
     for _, row in df_class.iterrows():
         color_lookup[int(row["Cluster_ID"])] = palette.get(row["class"], palette["Other"])
 
-    t, x, y, _ = load_data_as_arrays(input_events_txt, 1.0, 'txt', start_row, n_rows)
+    t, x, y, _ = load_data_as_arrays(input_events_txt, 1.0, None, start_row, n_rows)
     cluster_ids = load_cluster_ids_chunk(input_events_txt, start_row, n_rows)
 
     local_sort = np.argsort(t)
@@ -242,6 +275,14 @@ def render_yt(input_events_txt, input_class_csv, output_video, bin_size, fps, st
     """
     Renders YT video with class colors.
     """
+    file_type = detect_file_type(input_events_txt)
+    if file_type != "txt":
+        raise click.ClickException(
+            "The 'render-yt' command requires a segmented TXT file containing a 'Cluster_ID' column "
+            "(i.e. the output of 'radiotrap segment'), plus the classification CSV from 'radiotrap classify'. "
+            f"Got: {input_events_txt}"
+        )
+
     # 1. Build Lookup (Same as above)
     palette = {"Alpha": [220, 20, 20], "Beta": [20, 180, 220], "Gamma": [20, 220, 20], "Other": [150, 150, 150]}
     df_class = pd.read_csv(input_class_csv)
@@ -251,7 +292,7 @@ def render_yt(input_events_txt, input_class_csv, output_video, bin_size, fps, st
         color_lookup[int(row["Cluster_ID"])] = palette.get(row["class"], palette["Other"])
 
     # 2. Load
-    t, x, y, _ = load_data_as_arrays(input_events_txt, 1.0, 'txt', start_row, n_rows)
+    t, x, y, _ = load_data_as_arrays(input_events_txt, 1.0, None, start_row, n_rows)
     cluster_ids = load_cluster_ids_chunk(input_events_txt, start_row, n_rows)
 
     local_sort = np.argsort(t)
@@ -278,7 +319,15 @@ def render_segmentation_yt(input_file, output_video, bin_size, fps, start_row, n
     """
     Renders YT video with random colors.
     """
-    t, x, y, _ = load_data_as_arrays(input_file, 1.0, 'txt', start_row, n_rows)
+    file_type = detect_file_type(input_file)
+    if file_type != "txt":
+        raise click.ClickException(
+            "The 'render-segmentation-yt' command requires a TXT file containing a 'Cluster_ID' column "
+            "(i.e. the output of 'radiotrap segment'). "
+            f"Got: {input_file}"
+        )
+
+    t, x, y, _ = load_data_as_arrays(input_file, 1.0, None, start_row, n_rows)
     cluster_ids = load_cluster_ids_chunk(input_file, start_row, n_rows)
 
     local_sort = np.argsort(t)
