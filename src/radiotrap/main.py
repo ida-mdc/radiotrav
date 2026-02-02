@@ -173,37 +173,26 @@ def load_cluster_ids_chunk(path, start_row, n_rows):
     """
     Helper to load JUST the Cluster_ID column for a specific row chunk.
     """
-    # 1. Read header row only to get all column names
-    header_df = pd.read_csv(path, sep=r"\s+", nrows=0, engine="python")
-    original_columns = list(header_df.columns)
-
-    # 2. Find the exact column name for "Cluster_ID" (handling quotes/spaces)
+    # Read the file normally (pandas handles quoted fields with spaces correctly)
+    # Then slice to get the chunk we need
+    df_full = pd.read_csv(path, sep=r"\s+", engine="python")
+    
+    # Find the Cluster_ID column name
     cluster_col_name = None
-    for col in original_columns:
+    for col in df_full.columns:
         clean_col = col.replace('"', '').replace("'", "").replace(".", "_").strip()
         if clean_col == "Cluster_ID":
             cluster_col_name = col
             break
-
+    
     if cluster_col_name is None:
-        raise ValueError(f"Input file missing 'Cluster_ID' column. Found: {original_columns}")
-
-    # 3. Read specific chunk
-    # CRITICAL FIX: We must pass 'names=original_columns' so pandas maps the data
-    # to the correct column names, even though we skipped the header row.
-    df = pd.read_csv(
-        path,
-        sep=r"\s+",
-        header=None,  # We are skipping the real header
-        names=original_columns,  # So we must provide names manually
-        usecols=[cluster_col_name],
-        skiprows=start_row + 1,  # +1 to skip the header line itself
-        nrows=n_rows,
-        dtype=str,
-        engine="python"
-    )
-
-    return pd.to_numeric(df[cluster_col_name], errors="coerce").fillna(0).astype(np.int32).values
+        raise ValueError(f"Input file missing 'Cluster_ID' column. Found: {list(df_full.columns)}")
+    
+    # Slice to get the chunk we need
+    end_row = start_row + n_rows if n_rows is not None else None
+    df_chunk = df_full.iloc[start_row:end_row]
+    
+    return pd.to_numeric(df_chunk[cluster_col_name], errors="coerce").fillna(0).astype(np.int32).values
 
 
 # ============================================================
@@ -252,23 +241,71 @@ def _run_classify(input_file, output_csv, start_row, n_rows):
     file_type = detect_file_type(input_file)
     if file_type != "txt":
         raise click.ClickException(
-            "The 'classify' command requires a TXT file containing a 'Cluster_ID' column "
-            "(i.e. the output of 'radiotrap segment'). "
+            "Classification requires a TXT file containing a 'Cluster_ID' column "
+            "(i.e. the output of 'radiotrap process'). "
             f"Got: {input_file}\n"
             "Run:\n"
-            "  radiotrap segment <input.t3pa|input.txt> segmented.txt --time-window <...>\n"
-            "Then:\n"
-            "  radiotrap classify segmented.txt classification.csv"
+            "  radiotrap process <input.t3pa|input.txt> output_dir --time-window <...>\n"
+            "This will generate segmented.txt, classification.csv, and chains.csv."
         )
 
-    # Load data normally
+    # Load data normally (this sorts by time)
     t, x, y, tot = load_data_as_arrays(input_file, 1.0, None, start_row, n_rows)
 
-    # Load IDs separately
-    cluster_ids = load_cluster_ids_chunk(input_file, start_row, n_rows)
+    # Load cluster IDs separately - need to match the sorting from load_data_as_arrays
+    # The issue is that quoted paths cause column misalignment with sep=r"\s+"
+    # Solution: Read file with CSV reader to handle quoted fields correctly
+    import csv
+    
+    cluster_ids_list = []
+    times_list = []
+    
+    with open(input_file, 'r') as f:
+        reader = csv.reader(f, delimiter=' ', quoting=csv.QUOTE_MINIMAL)
+        header = next(reader)
+        
+        # Find column indices
+        cluster_idx = None
+        time_idx = None
+        for i, col in enumerate(header):
+            clean = col.replace('"', '').replace("'", "").replace(".", "_").strip()
+            if clean == "Cluster_ID":
+                cluster_idx = i
+            if clean in ["arrival_time", "time"]:
+                time_idx = i
+        
+        if cluster_idx is None or time_idx is None:
+            raise ValueError(f"Missing required columns. Found: {header}")
+        
+        # Skip to start_row
+        for _ in range(start_row):
+            try:
+                next(reader)
+            except StopIteration:
+                break
+        
+        # Read n_rows
+        count = 0
+        for row in reader:
+            if n_rows is not None and count >= n_rows:
+                break
+            if len(row) > max(cluster_idx, time_idx):
+                try:
+                    cluster_id = int(float(row[cluster_idx]))
+                    time_val = float(row[time_idx])
+                    cluster_ids_list.append(cluster_id)
+                    times_list.append(time_val)
+                    count += 1
+                except (ValueError, IndexError):
+                    continue
+    
+    # Convert to arrays and sort by time (matching load_data_as_arrays)
+    cluster_ids_arr = np.array(cluster_ids_list, dtype=np.int32)
+    times_arr = np.array(times_list)
+    sort_idx = np.argsort(times_arr)
+    cluster_ids = cluster_ids_arr[sort_idx]
 
     # Reconstruct DF for calculation
-    # FIX: Added "arrival_time": t
     df_calc = pd.DataFrame({
         "x_pos": x,
         "y_pos": y,
@@ -658,6 +695,11 @@ def render(input_path, output_file, classification_csv, chains_csv, radiation, s
     is_flag=True,
     help="If set, skip segmentation if segmented.txt already exists in output directory. Useful when segmentation is expensive and you only want to redo classification/sequences.",
 )
+@click.option(
+    "--skip-existing-classification",
+    is_flag=True,
+    help="If set, skip classification if classification.csv already exists in output directory. Useful when classification is expensive and you only want to redo sequence analysis.",
+)
 def process(
     input_file,
     output_dir,
@@ -670,6 +712,7 @@ def process(
     start_row,
     n_rows,
     skip_existing_segmentation,
+    skip_existing_classification,
 ):
     """
     Full pipeline:
@@ -680,8 +723,10 @@ def process(
     4) Copy HTML dashboards into the output folder
 
     Use --skip-existing-segmentation to skip the expensive segmentation step if
-    segmented.txt already exists in the output directory. This is useful when
-    you only want to redo classification or sequence analysis.
+    segmented.txt already exists in the output directory.
+    
+    Use --skip-existing-classification to skip classification if classification.csv
+    already exists. This is useful when you only want to redo sequence analysis.
     """
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -721,13 +766,23 @@ def process(
         )
 
     # 2) CLASSIFY
-    click.echo("=== STEP 2/3: Classification ===")
-    _run_classify(
-        input_file=str(seg_txt),
-        output_csv=str(class_csv),
-        start_row=0,
-        n_rows=None,
-    )
+    skip_classification = skip_existing_classification and class_csv.exists()
+    if skip_classification:
+        click.echo("=== SKIPPING Classification (--skip-existing-classification, file exists) ===")
+        if not class_csv.exists():
+            raise click.ClickException(
+                f"Classification file not found: {class_csv}\n"
+                "Cannot skip classification without classification.csv. Remove --skip-existing-classification or run full pipeline first."
+            )
+        click.echo(f"Using existing classification file: {class_csv}")
+    else:
+        click.echo("=== STEP 2/3: Classification ===")
+        _run_classify(
+            input_file=str(seg_txt),
+            output_csv=str(class_csv),
+            start_row=0,
+            n_rows=None,
+        )
 
     # 3) SEQUENCE ANALYSIS
     click.echo("=== STEP 3/3: Sequence Analysis ===")
@@ -741,76 +796,21 @@ def process(
         pattern_lookup_file=sequence_pattern_lookup,
     )
 
-    # 4) Copy HTML dashboards into output folder (original pages)
-    click.echo("Copying HTML dashboards into output folder...")
+    # 4) Copy HTML dashboard into output folder
+    click.echo("Copying HTML dashboard into output folder...")
     project_root = Path(__file__).resolve().parents[2]
     report_dir = project_root / "report"
+    dashboard_src = report_dir / "dashboard.html"
 
-    html_sources = {
-        "event_viewer.html": report_dir / "event_viewer.html",
-        "report.html": report_dir / "report.html",
-        "sequence_report.html": report_dir / "sequence_report.html",
-        "radiotrap_dashboard_consolidated.html": report_dir / "radiotrap_dashboard_consolidated.html",
-    }
+    try:
+        dashboard_dst = out_dir / "dashboard.html"
+        with dashboard_src.open("r", encoding="utf-8") as f_in, dashboard_dst.open("w", encoding="utf-8") as f_out:
+            f_out.write(f_in.read())
+        click.echo(f"Dashboard copied to {dashboard_dst}")
+    except FileNotFoundError:
+        click.echo(f"Warning: Dashboard template not found: {dashboard_src}")
 
-    for name, src in html_sources.items():
-        try:
-            dst = out_dir / name
-            with src.open("r", encoding="utf-8") as f_in, dst.open("w", encoding="utf-8") as f_out:
-                f_out.write(f_in.read())
-        except FileNotFoundError:
-            click.echo(f"Warning: HTML template not found: {src}")
-
-    # Simple index.html with links to the dashboards
-    index_html = out_dir / "index.html"
-    if not index_html.exists():
-        index_html.write_text(
-            """<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>Radiotrap Reports</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <style>
-    body { font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background:#0f172a; color:#e5e7eb; margin:0; padding:0; }
-    .container { max-width: 960px; margin: 0 auto; padding: 24px; }
-    a.card { display:block; padding:14px 18px; margin-bottom:10px; border-radius:10px; text-decoration:none; color:inherit;
-             background:#020617; border:1px solid #1e293b; }
-    a.card:hover { border-color:#38bdf8; }
-    .title { font-size:18px; font-weight:600; margin-bottom:2px; }
-    .subtitle { font-size:13px; color:#9ca3af; }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <h1 style="font-size:22px; font-weight:700; margin-bottom:14px;">Radiotrap Reports</h1>
-    <p style="font-size:13px; color:#9ca3af; margin-bottom:18px;">
-      This folder was generated by <code>radiotrap process</code>. Open any view below in your browser.
-    </p>
-    <a href="radiotrap_dashboard_consolidated.html" class="card">
-      <div class="title">Consolidated Dashboard</div>
-      <div class="subtitle">Interactive dashboard with classification plots, galleries, sequence analysis, and event viewer.</div>
-    </a>
-    <a href="event_viewer.html" class="card">
-      <div class="title">Event Viewer (Sliding XY Window)</div>
-      <div class="subtitle">Interactive XY view over time. Load <code>segmented.txt</code> and optional <code>classification.csv</code>.</div>
-    </a>
-    <a href="report.html" class="card">
-      <div class="title">Classification Report</div>
-      <div class="subtitle">Dashboard for <code>classification.csv</code> (per-cluster statistics and thumbnails).</div>
-    </a>
-    <a href="sequence_report.html" class="card">
-      <div class="title">Sequence / Chain Report</div>
-      <div class="subtitle">Decay chain exploration for <code>chains.csv</code> from sequence analysis.</div>
-    </a>
-  </div>
-</body>
-</html>
-""",
-            encoding="utf-8",
-        )
-
-    click.echo("Done. Open index.html in a browser to explore the results.")
+    click.echo("Done. Open dashboard.html in a browser and load the generated CSV files.")
 
 if __name__ == "__main__":
     cli()

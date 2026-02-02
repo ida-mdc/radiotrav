@@ -32,27 +32,67 @@ def load_data_as_arrays(path, ftoa_factor=1.0, file_type=None, start_row=0, n_ro
 
     # 1. Read just the header to get column names
     if file_type == 't3pa':
-        header_df = pd.read_csv(path, sep=r"\s+", header=0, nrows=0, engine="python")
-        col_names = header_df.columns
+        # For t3pa files, read with tab separator first to check, then fall back to whitespace
+        # Some t3pa files use tabs, some use spaces
+        try:
+            header_df = pd.read_csv(path, sep="\t", header=0, nrows=0, engine="python")
+            sep_char = "\t"
+        except:
+            header_df = pd.read_csv(path, sep=r"\s+", header=0, nrows=0, engine="python")
+            sep_char = r"\s+"
+        col_names = list(header_df.columns)
         skip_header = 1
     else:
         # TXT files usually have headers too based on your previous examples
-        header_df = pd.read_csv(path, sep=r"\s+", nrows=0, engine="python")
-        col_names = header_df.columns
+        # Use CSV reader to handle quoted fields correctly
+        import csv
+        with open(path, 'r') as f:
+            reader = csv.reader(f, delimiter=' ', quoting=csv.QUOTE_MINIMAL)
+            header = next(reader)
+            col_names = header
         skip_header = 1
+        sep_char = None  # Will use CSV reader for txt files
 
     # 2. Read the specific chunk
-    # We skip 'start_row' data lines + the header lines
-    df = pd.read_csv(
-        path,
-        sep=r"\s+",
-        header=None,  # We provide names manually
-        names=col_names,
-        skiprows=start_row + skip_header,
-        nrows=n_rows,
-        dtype=str,
-        engine="python"
-    )
+    if file_type == 't3pa':
+        # For t3pa files, use pandas with the detected separator
+        df = pd.read_csv(
+            path,
+            sep=sep_char,
+            header=None,  # We provide names manually
+            names=col_names,
+            skiprows=start_row + skip_header,
+            nrows=n_rows,
+            dtype=str,
+            engine="python"
+        )
+    else:
+        # For txt files with quoted fields, use CSV reader
+        import csv
+        rows = []
+        with open(path, 'r') as f:
+            reader = csv.reader(f, delimiter=' ', quoting=csv.QUOTE_MINIMAL)
+            next(reader)  # Skip header
+            # Skip to start_row
+            for _ in range(start_row):
+                try:
+                    next(reader)
+                except StopIteration:
+                    break
+            # Read n_rows
+            count = 0
+            for row in reader:
+                if n_rows is not None and count >= n_rows:
+                    break
+                rows.append(row)
+                count += 1
+        
+        # Convert to DataFrame
+        # Pad rows to same length if needed
+        max_len = max(len(row) for row in rows) if rows else len(col_names)
+        padded_rows = [row + [''] * (max_len - len(row)) for row in rows]
+        df = pd.DataFrame(padded_rows, columns=col_names[:max_len] if len(col_names) >= max_len else col_names + [''] * (max_len - len(col_names)))
+        df = df[col_names[:len(df.columns)]]  # Keep only the columns we need
 
     if len(df) == 0:
         raise ValueError("Loaded 0 rows. Check your --start-row index.")
@@ -62,7 +102,16 @@ def load_data_as_arrays(path, ftoa_factor=1.0, file_type=None, start_row=0, n_ro
         for col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
 
-        matrix_col = "Matrix Index" if "Matrix Index" in df.columns else "Matrix"
+        # Handle "Matrix Index" being split into "Matrix" and "Index.1" (or similar)
+        # Check if we have "Matrix Index" as a single column
+        if "Matrix Index" in df.columns:
+            matrix_col = "Matrix Index"
+        elif "Matrix" in df.columns:
+            # "Matrix Index" was split - use "Matrix" column
+            matrix_col = "Matrix"
+        else:
+            raise ValueError(f"Could not find Matrix Index column. Available columns: {list(df.columns)}")
+        
         x = (df[matrix_col] % 256).astype(np.int32).values
         y = (df[matrix_col] // 256).astype(np.int32).values
         # Match R script conversion: arrival_time = (ToA * 25) - ((FToA * 25)/16)
