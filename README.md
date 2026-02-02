@@ -96,7 +96,7 @@ uv run radiotrap render output_dir beta_alpha_chains.mp4 \
 
 # Custom projection and mode
 uv run radiotrap render output_dir energy_sideview.mp4 \
-  --projection yt --mode energy --bin-size 1000000
+  --projection yt --mode energy --speed 100
 ```
 
 See the [Command Reference](#command-reference) below for all render options.
@@ -152,10 +152,9 @@ Render events to video/image with filtering options matching the dashboard.
   - `--seq-max-dist [FLOAT]`: max spatial distance in chain (pixels).
   - `--view [animated|max]` (default: `animated`): `animated` (MP4) or `max` (PNG projection).
   - `--projection [xy|yt]` (default: `xy`): `xy` (top-down) or `yt` (side view, Y vs Time).
-  - `--mode [classification|energy|density|time]` (default: `classification`): display mode.
-  - `--bin-size [FLOAT]`: time bin size in nanoseconds (e.g., `10000000` for 10ms). If not set, derived from `--speed` and `--fps`.
+  - `--mode [classification|energy]` (default: `classification`): display mode.
   - `--time-window [FLOAT]`: fade in/out window in nanoseconds (e.g., `1e9` for 1s). Events within this window around each frame center are blended with alpha fade.
-  - `--speed [FLOAT]` (default: `1.0`): playback speed multiplier. Higher = fewer frames, faster render. Only used when `--bin-size` is not set.
+  - `--speed [FLOAT]` (default: `1.0`): playback speed multiplier. Higher = fewer frames, faster render.
   - `--fps [INT]` (default: `30`): frames per second (for MP4 format).
   - `--start-row [INT]` (default: `0`): first input row to load.
   - `--n-rows [INT]` (default: all): number of rows to process.

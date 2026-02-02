@@ -2291,23 +2291,58 @@
           colors[i] = [r/255, g/255, b/255, a];
         }
       } else if (mode === "energy" && ev.tot) {
-        // Normalize energy values for this window
-        let minE = Infinity, maxE = -Infinity;
+        // Aggregate by pixel: sum energy values at each pixel (events within time window)
+        const pixelMap = new Map(); // key: numeric (y*264+x) -> {sumEnergy, sumAlpha, maxAlpha}
         for (let i = 0; i < count; i++) {
           if (alpha[i] > 0) {
-            const v = energyVals[i];
-            if (v < minE) minE = v;
-            if (v > maxE) maxE = v;
+            const key = pixelKey(x[i], y[i]);
+            const energy = energyVals[i] || 0;
+            const existing = pixelMap.get(key);
+            if (existing) {
+              existing.sumEnergy += energy;
+              existing.sumAlpha += alpha[i];
+              if (alpha[i] > existing.maxAlpha) existing.maxAlpha = alpha[i];
+            } else {
+              pixelMap.set(key, { sumEnergy: energy, sumAlpha: alpha[i], maxAlpha: alpha[i] });
+            }
           }
+        }
+        
+        // Normalize energy values (use accumulated sum)
+        let minE = Infinity, maxE = -Infinity;
+        for (const p of pixelMap.values()) {
+          const e = p.sumEnergy;
+          if (e < minE) minE = e;
+          if (e > maxE) maxE = e;
         }
         if (minE === Infinity) { minE = 0; maxE = 1; }
         const invSpan = maxE > minE ? 1 / (maxE - minE) : 0;
-        colors = new Array(count);
-        for (let i = 0; i < count; i++) {
-          const v = clamp01((energyVals[i] - minE) * invSpan);
+        
+        // Build aggregated arrays
+        const aggCount = pixelMap.size;
+        const xAgg = new Array(aggCount);
+        const yAgg = new Array(aggCount);
+        const alphaAgg = new Array(aggCount);
+        colors = new Array(aggCount);
+        let aggIdx = 0;
+        
+        pixelMap.forEach((p, key) => {
+          const [xx, yy] = pixelKeyToXY(key);
+          const v = clamp01((p.sumEnergy - minE) * invSpan);
           const [r,g,b] = turboRgb255(v);
-          const a = alpha[i];
-          colors[i] = [r/255, g/255, b/255, a];
+          xAgg[aggIdx] = xx;
+          yAgg[aggIdx] = yy;
+          // Use maxAlpha for brightness (similar to video rendering)
+          alphaAgg[aggIdx] = p.maxAlpha;
+          colors[aggIdx] = [r/255, g/255, b/255, p.maxAlpha];
+          aggIdx++;
+        });
+        
+        x.length = aggCount; y.length = aggCount; alpha.length = aggCount;
+        for (let i = 0; i < aggCount; i++) {
+          x[i] = xAgg[i];
+          y[i] = yAgg[i];
+          alpha[i] = alphaAgg[i];
         }
       } else if (mode === "density") {
         // Aggregate counts per (x,y) pixel

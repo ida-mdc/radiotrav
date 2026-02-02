@@ -172,27 +172,59 @@ def compute_allowed_cluster_ids(classification_csv_path, chains_csv_path, radiat
 def load_cluster_ids_chunk(path, start_row, n_rows):
     """
     Helper to load JUST the Cluster_ID column for a specific row chunk.
+    Uses CSV reader to handle quoted fields correctly.
     """
-    # Read the file normally (pandas handles quoted fields with spaces correctly)
-    # Then slice to get the chunk we need
-    df_full = pd.read_csv(path, sep=r"\s+", engine="python")
+    import csv
     
-    # Find the Cluster_ID column name
-    cluster_col_name = None
-    for col in df_full.columns:
-        clean_col = col.replace('"', '').replace("'", "").replace(".", "_").strip()
-        if clean_col == "Cluster_ID":
-            cluster_col_name = col
-            break
+    cluster_ids_list = []
+    times_list = []
     
-    if cluster_col_name is None:
-        raise ValueError(f"Input file missing 'Cluster_ID' column. Found: {list(df_full.columns)}")
+    with open(path, 'r') as f:
+        reader = csv.reader(f, delimiter=' ', quoting=csv.QUOTE_MINIMAL)
+        header = next(reader)
+        
+        # Find column indices
+        cluster_idx = None
+        time_idx = None
+        for i, col in enumerate(header):
+            clean = col.replace('"', '').replace("'", "").replace(".", "_").strip()
+            if clean == "Cluster_ID":
+                cluster_idx = i
+            if clean in ["arrival_time", "time"]:
+                time_idx = i
+        
+        if cluster_idx is None or time_idx is None:
+            raise ValueError(f"Missing required columns. Found: {header}")
+        
+        # Skip to start_row
+        for _ in range(start_row):
+            try:
+                next(reader)
+            except StopIteration:
+                break
+        
+        # Read n_rows
+        count = 0
+        for row in reader:
+            if n_rows is not None and count >= n_rows:
+                break
+            if len(row) > max(cluster_idx, time_idx):
+                try:
+                    cluster_id = int(float(row[cluster_idx]))
+                    time_val = float(row[time_idx])
+                    cluster_ids_list.append(cluster_id)
+                    times_list.append(time_val)
+                    count += 1
+                except (ValueError, IndexError):
+                    continue
     
-    # Slice to get the chunk we need
-    end_row = start_row + n_rows if n_rows is not None else None
-    df_chunk = df_full.iloc[start_row:end_row]
+    # Convert to arrays and sort by time (matching load_data_as_arrays)
+    cluster_ids_arr = np.array(cluster_ids_list, dtype=np.int32)
+    times_arr = np.array(times_list)
+    sort_idx = np.argsort(times_arr)
+    cluster_ids = cluster_ids_arr[sort_idx]
     
-    return pd.to_numeric(df_chunk[cluster_col_name], errors="coerce").fillna(0).astype(np.int32).values
+    return cluster_ids
 
 
 # ============================================================
@@ -412,7 +444,7 @@ def _run_analyze_sequences(input_csv, output_chains_csv, radius, time_window, ke
 @click.option("--seq-max-dist", type=float, default=None, help="Max spatial distance in chain (px). Filter chains by step distance.")
 @click.option("--view", type=click.Choice(["animated", "max"]), default="animated", help="View mode: animated (mp4) or max projection (png).")
 @click.option("--projection", type=click.Choice(["xy", "yt"]), default="xy", help="Projection type: xy (top-down) or yt (side view, Y vs Time).")
-@click.option("--mode", type=click.Choice(["classification", "energy", "density", "time"]), default="classification", help="Display mode.")
+@click.option("--mode", type=click.Choice(["classification", "energy"]), default="classification", help="Display mode.")
 @click.option("--bin-size", type=float, default=None, help="Time bin size in nanoseconds (e.g., 10000000 for 10ms). If not set, derived from --speed and --fps.")
 @click.option("--time-window", type=float, default=None, help="Fade in/out window (nanoseconds, e.g. 1e9 for 1s). Events within this window around each frame center are blended with alpha fade; does not affect the number of frames.")
 @click.option("--speed", type=float, default=1.0, help="Playback speed (× real-time). Higher = fewer frames, faster render. Only used when --bin-size is not set.")
@@ -428,7 +460,7 @@ def render(input_path, output_file, classification_csv, chains_csv, radiation, s
     
     - View: animated (mp4 video) or max (png image)
     - Projection: xy (top-down) or yt (side view, Y vs Time)
-    - Mode: classification, energy, density, or time
+    - Mode: classification or energy
     """
     
     # Resolve input: directory -> segmented.txt + classification.csv + chains.csv
@@ -464,6 +496,11 @@ def render(input_path, output_file, classification_csv, chains_csv, radiation, s
             t, x, y, tot = t[mask], x[mask], y[mask], tot[mask]
             cluster_ids_full = cluster_ids_full[mask]
             click.echo(f"Filter: {len(t)} / {n_before} events (radiation={radiation}, seq-query={seq_query or '-'})")
+            if len(t) == 0:
+                raise click.ClickException(
+                    f"No events match the filter criteria. "
+                    f"Try adjusting --radiation, --seq-query, --seq-max-dt, or --seq-max-dist parameters."
+                )
         cluster_ids = cluster_ids_full
     else:
         cluster_ids = None
@@ -537,8 +574,8 @@ def render(input_path, output_file, classification_csv, chains_csv, radiation, s
                 if 0 <= cid < len(color_lookup):
                     img[yi, xi] = color_lookup[cid]
         
-        elif mode in ["energy", "density", "time"]:
-            # For energy/density/time modes, use max projection of ToT values
+        elif mode == "energy":
+            # For energy mode, use max projection of ToT values
             # Aggregate by pixel, taking max value
             pixel_map = {}  # (x, y) -> max_value
             for i in range(len(x)):
@@ -661,12 +698,26 @@ def render(input_path, output_file, classification_csv, chains_csv, radiation, s
                 cluster_ids = cluster_ids[local_sort]
                 
                 # Render with classification colors
-                render_xy_discrete(t, x, y, cluster_ids, output_file, bin_size_ns, fps, color_lookup=color_lookup, time_window_ns=time_window)
+                # Adjust time_window if it's smaller than bin_size to ensure events are visible
+                effective_time_window = time_window
+                if time_window is not None and time_window > 0:
+                    min_time_window = bin_size_ns * 1.5
+                    if time_window < min_time_window:
+                        effective_time_window = min_time_window
+                        click.echo(f"Adjusting time_window from {time_window/1e9:.3f}s to {effective_time_window/1e9:.3f}s to match bin_size")
+                render_xy_discrete(t, x, y, cluster_ids, output_file, bin_size_ns, fps, color_lookup=color_lookup, time_window_ns=effective_time_window)
             
-            elif mode in ["energy", "density", "time"]:
-                # For these modes, render raw events (no classification needed)
-                # Note: energy/density/time modes are simplified - they all render as energy (ToT) for now
-                render_video_stream(t, x, y, tot, output_file, bin_size_ns, fps, time_window_ns=time_window)
+            elif mode == "energy":
+                # For energy mode, render raw events (no classification needed)
+                # Adjust time_window if it's smaller than bin_size to ensure events are visible
+                # Use at least 1.5x bin_size to ensure good coverage
+                effective_time_window = time_window
+                if time_window is not None and time_window > 0:
+                    min_time_window = bin_size_ns * 1.5
+                    if time_window < min_time_window:
+                        effective_time_window = min_time_window
+                        click.echo(f"Adjusting time_window from {time_window/1e9:.3f}s to {effective_time_window/1e9:.3f}s to match bin_size")
+                render_video_stream(t, x, y, tot, output_file, bin_size_ns, fps, time_window_ns=effective_time_window)
             else:
                 raise click.ClickException(f"Unsupported mode: {mode}")
     

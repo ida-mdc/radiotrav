@@ -15,6 +15,8 @@ def _calc_time_params(t, bin_size, t_limits=None):
     if t_limits is not None:
         tmin, tmax = t_limits
     else:
+        if len(t) == 0:
+            raise ValueError("Cannot render: no events to render. Check your filters or input data.")
         tmin, tmax = t[0], t[-1]
 
     n_frames = int(np.ceil((tmax - tmin) / bin_size))
@@ -103,11 +105,14 @@ def render_video_stream(t, x, y, tot, output_file, bin_size, fps, time_window_ns
                     y_chunk = np.clip(y[idx_lo:idx_hi].astype(np.int32), 0, 255)
                     tot_chunk = tot[idx_lo:idx_hi].astype(np.float64)
                     alpha = _alpha_fade(t_chunk, t_center, half_win_ns)
+                    # Accumulate energy (sum all events at each pixel within the time window)
                     np.add.at(energy_acc[i], (y_chunk, x_chunk), tot_chunk * alpha)
                     np.add.at(alpha_acc[i], (y_chunk, x_chunk), alpha)
                 with np.errstate(divide="ignore", invalid="ignore"):
-                    weighted_energy = np.where(alpha_acc > 0, energy_acc / alpha_acc, 0)
-                norm_energy = np.clip(weighted_energy / max_energy, 0, 1)
+                    # Weighted average: total energy / total alpha (but we want sum, so use energy_acc directly)
+                    # Actually, for energy visualization, we want the accumulated sum, not average
+                    # So normalize by max_energy but keep the accumulated values
+                    norm_energy = np.clip(energy_acc / max_energy, 0, 1)
                 rgb_float = cmap(norm_energy)[..., :3]
                 max_alpha = alpha_acc.max(axis=(1, 2), keepdims=True)
                 max_alpha = np.where(max_alpha > 0, max_alpha, 1.0)
@@ -125,6 +130,7 @@ def render_video_stream(t, x, y, tot, output_file, bin_size, fps, time_window_ns
                 if len(t_chunk) == 0:
                     rgb = np.zeros((current_batch_size, 256, 256, 3), dtype=np.uint8)
                 else:
+                    # Hard bins: sum energy at each pixel per frame
                     frame_indices = ((t_chunk - t_start) / bin_size).astype(np.int64)
                     frame_indices = np.clip(frame_indices, 0, current_batch_size - 1)
                     flat_indices = frame_indices * 65536 + y_chunk * 256 + x_chunk
@@ -136,6 +142,7 @@ def render_video_stream(t, x, y, tot, output_file, bin_size, fps, time_window_ns
                     hits_3d = hits_flat.reshape((current_batch_size, 256, 256))
                     energy_3d = energy_flat.reshape((current_batch_size, 256, 256))
 
+                    # Normalize accumulated energy sum
                     norm_energy = energy_3d / max_energy
                     rgb = cmap(norm_energy)[..., :3]
 
