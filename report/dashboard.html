@@ -1,0 +1,3077 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Radiotrap</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.plot.ly/plotly-2.30.0.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+  <style>
+    /* Light theme */
+    body { background: #f8fafc; color: #0f172a; }
+    .tab-active { border-color: #0284c7; color: #0f172a; }
+    .tab-inactive { border-color: transparent; color: #64748b; }
+    .chip { padding: 2px 8px; border-radius: 999px; font-size: 11px; background: rgba(148,163,184,0.22); color: #334155; }
+    .card { background: #ffffff; border: 1px solid rgba(148,163,184,0.35); border-radius: 12px; }
+    .btn { background: rgba(2,132,199,0.08); border: 1px solid rgba(2,132,199,0.35); padding: 6px 10px; border-radius: 10px; font-size: 12px; color: #0f172a; }
+    .btn:hover { background: rgba(2,132,199,0.12); }
+    .btn-ghost { background: rgba(148,163,184,0.12); border: 1px solid rgba(148,163,184,0.35); }
+    .btn-ghost:hover { background: rgba(148,163,184,0.18); }
+    .input { background: #ffffff; border: 1px solid rgba(148,163,184,0.55); border-radius: 10px; padding: 6px 10px; font-size: 12px; color: #0f172a; width: 100%; }
+    .select { background: #ffffff; border: 1px solid rgba(148,163,184,0.55); border-radius: 10px; padding: 6px 10px; font-size: 12px; color: #0f172a; width: 100%; }
+    .gallery-item { border: 1px solid rgba(148,163,184,0.35); background: #ffffff; border-radius: 12px; padding: 10px; cursor: pointer; }
+    .gallery-item:hover { border-color: rgba(2,132,199,0.55); }
+    .gallery-item.selected { background: rgba(2,132,199,0.10); border: 2px solid rgba(2,132,199,0.65); }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+    .thumbnail { image-rendering: pixelated; image-rendering: -moz-crisp-edges; image-rendering: crisp-edges; }
+    .viewer-plot-wrap { padding: 8px; }
+  </style>
+</head>
+<body class="min-h-screen">
+  <div class="w-full px-4 py-5">
+    <!-- Header -->
+    <div class="flex flex-col gap-3 mb-4">
+      <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+        <div class="flex items-center gap-4">
+          <h1 class="text-2xl font-semibold">Radiotrap</h1>
+        </div>
+        <!-- File inputs -->
+        <div class="card p-3">
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div>
+              <div class="text-[11px] text-slate-500 uppercase mb-1">segmented.txt (events)</div>
+              <input id="events-file-input" type="file" class="text-xs" />
+            </div>
+            <div>
+              <div class="text-[11px] text-slate-500 uppercase mb-1">classification.csv</div>
+              <input id="class-file-input" type="file" accept=".csv" class="text-xs" />
+            </div>
+            <div>
+              <div class="text-[11px] text-slate-500 uppercase mb-1">chains.csv</div>
+              <input id="seq-file-input" type="file" accept=".csv" class="text-xs" />
+            </div>
+          </div>
+        </div>
+
+        <div class="card p-3 flex flex-col lg:flex-row lg:items-end gap-2 w-full">
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-8 gap-1 flex-1">
+            <!-- <div id="global-status" class="text-xs text-slate-600">Waiting for data…</div> -->
+
+            <div id="global-status" class="text-xs text-slate-600 lg:col-span-2">Waiting for data…</div>
+
+            <div>
+              <div class="text-[11px] text-slate-300 uppercase mb-1">Classification</div>
+              <select id="classgal-rad" class="select"></select>
+            </div>
+            <div>
+              <div class="text-[11px] text-slate-300 uppercase mb-1">Sequence pattern filter</div>
+              <input id="seqgal-query" class="input mono" placeholder="e.g. Beta - Alpha" />
+            </div>
+            <div class="flex items-end gap-2">
+              <label class="text-xs text-slate-300 flex items-center gap-2">
+                <input id="seqgal-exact" type="checkbox" />
+                full match
+              </label>
+            </div>
+            <div>
+              <div class="text-[11px] text-slate-300 uppercase mb-1">Max Δt (s)</div>
+              <input id="seqgal-maxdt" class="input mono" type="number" min="0" step="0.001" placeholder="∞" />
+            </div>
+            <div>
+              <div class="text-[11px] text-slate-300 uppercase mb-1">Max Δd (px)</div>
+              <input id="seqgal-maxdist" class="input mono" type="number" min="0" step="0.1" placeholder="∞" />
+            </div>
+            <div class="flex items-end">
+              <button id="viewer-reset" class="btn btn-ghost">Reset filters</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main layout: left (tabs) / right (viewer) -->
+    <div class="grid lg:grid-cols-2 gap-4 lg:h-[calc(100vh-260px)]">
+      <!-- LEFT -->
+      <div class="flex flex-col min-h-0">
+        <!-- Tabs (fixed; not in scrollbar) -->
+        <div class="flex flex-wrap gap-2 border-b border-slate-200 bg-slate-50/80 backdrop-blur sticky top-0 z-10">
+          <button id="tab-btn-class-plots" class="px-3 py-2 text-sm border-b-2 tab-active">Classification Plots</button>
+          <button id="tab-btn-class-gallery" class="px-3 py-2 text-sm border-b-2 tab-inactive">Classification Gallery</button>
+          <button id="tab-btn-seq-plots" class="px-3 py-2 text-sm border-b-2 tab-inactive">Sequence Plots</button>
+          <button id="tab-btn-seq-gallery" class="px-3 py-2 text-sm border-b-2 tab-inactive">Sequence Gallery</button>
+        </div>
+
+        <!-- Scrollable tab contents -->
+        <div class="min-h-0 overflow-y-auto pr-2 pt-4 space-y-4">
+        <!-- TAB: CLASSIFICATION PLOTS -->
+        <div id="tab-class-plots" class="space-y-4">
+          <div class="card p-4">
+            <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-3 mb-3">
+              <div>
+                <div class="text-sm font-semibold">Classification Data</div>
+                <div class="text-xs text-slate-600">Aggregated plots. Global filter applies.</div>
+              </div>
+              <div class="flex items-end gap-2">
+                <button id="class-refresh" class="btn">Recompute plots</button>
+              </div>
+            </div>
+            <div id="class-status" class="text-xs text-slate-600 mb-3">Waiting for data…</div>
+
+            <div class="grid md:grid-cols-4 gap-3 mb-3">
+              <div class="bg-slate-50 rounded-lg p-3 border border-slate-200">
+                <div class="text-[11px] text-slate-500 uppercase mb-1">Total clusters</div>
+                <div id="class-total" class="text-xl font-semibold">–</div>
+              </div>
+              <div class="bg-slate-50 rounded-lg p-3 border border-slate-200 md:col-span-2">
+                <div class="text-[11px] text-slate-500 uppercase mb-1">By radiation type</div>
+                <div id="class-rad-counts" class="text-xs text-slate-700 leading-tight whitespace-pre"></div>
+              </div>
+              <div class="bg-slate-50 rounded-lg p-3 border border-slate-200">
+                <div class="text-[11px] text-slate-500 uppercase mb-1">Energy (mean)</div>
+                <div id="class-mean-energy" class="text-sm text-slate-900">–</div>
+              </div>
+            </div>
+
+            <div class="space-y-3">
+              <div class="min-w-0">
+                <div class="text-xs text-slate-600 mb-1">Counts by class</div>
+                <div id="class-plot-counts" style="height: 320px; width: 100%;"></div>
+              </div>
+              <div class="min-w-0">
+                <div class="text-xs text-slate-600 mb-1">Energy distribution (binned)</div>
+                <div id="class-plot-energy" style="height: 320px; width: 100%;"></div>
+              </div>
+              <div class="min-w-0">
+                <div class="text-xs text-slate-600 mb-1">Max radius distribution (binned)</div>
+                <div id="class-plot-radius" style="height: 320px; width: 100%;"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB: CLASSIFICATION GALLERY -->
+        <div id="tab-class-gallery" class="space-y-4 hidden">
+          <div class="card p-4">
+            <div class="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-3 mb-3">
+              <div>
+                <div class="text-sm font-semibold">Classification Gallery</div>
+                <div class="text-xs text-slate-600">Global filter applies. Sorting/limit are local.</div>
+              </div>
+              <div class="grid grid-cols-1 md:grid-cols-3 gap-2 w-full lg:w-[720px]">
+                <div>
+                  <div class="text-[11px] text-slate-500 uppercase mb-1">Sort by</div>
+                  <select id="classgal-sort" class="select"></select>
+                </div>
+                <div>
+                  <div class="text-[11px] text-slate-500 uppercase mb-1">Direction</div>
+                  <button id="classgal-dir" class="btn w-full">↓ Desc</button>
+                </div>
+                <div>
+                  <div class="text-[11px] text-slate-500 uppercase mb-1">Show</div>
+                  <select id="classgal-limit" class="select">
+                    <option value="20">20</option>
+                    <option value="30" selected>30</option>
+                    <option value="50">50</option>
+                    <option value="100">100</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+            <div id="classgal-status" class="text-xs text-slate-600 mb-3">Waiting for classification data…</div>
+            <div id="classgal-grid" class="grid md:grid-cols-2 xl:grid-cols-3 gap-3"></div>
+          </div>
+        </div>
+
+        <!-- TAB: SEQUENCE PLOTS -->
+        <div id="tab-seq-plots" class="space-y-4 hidden">
+          <div class="card p-4">
+            <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-3 mb-3">
+              <div>
+                <div class="text-sm font-semibold">Sequences / Chains</div>
+                <div class="text-xs text-slate-600">Aggregated statistics + distributions. Global filter applies.</div>
+              </div>
+              <div class="flex items-end gap-2">
+                <button id="seq-refresh" class="btn">Recompute plots</button>
+              </div>
+            </div>
+            <div id="seq-status" class="text-xs text-slate-600 mb-3">Waiting for data…</div>
+
+            <div class="space-y-3">
+              <div class="min-w-0">
+                <div class="text-xs text-slate-600 mb-1">Top patterns</div>
+                <div id="seq-patterns" style="height: 340px; width: 100%;"></div>
+              </div>
+              <div class="min-w-0">
+                <div class="text-xs text-slate-600 mb-1">Chain lengths</div>
+                <div id="seq-lengths" style="height: 340px; width: 100%;"></div>
+              </div>
+              <div class="min-w-0">
+                <div class="text-xs text-slate-600 mb-1">Time gaps between events (Time_Delta, s)</div>
+                <div id="seq-time-deltas" style="height: 340px; width: 100%;"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB: SEQUENCE GALLERY -->
+        <div id="tab-seq-gallery" class="space-y-4 hidden">
+          <div class="card p-4">
+            <div class="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-3 mb-3">
+              <div>
+                <div class="text-sm font-semibold">Sequence Gallery</div>
+                <div class="text-xs text-slate-600">Global filter applies. Sorting/limit are local.</div>
+              </div>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-2 w-full lg:w-[520px]">
+                <div>
+                  <div class="text-[11px] text-slate-500 uppercase mb-1">Sort by</div>
+                  <select id="seqgal-sort" class="select">
+                    <option value="count" selected>count</option>
+                    <option value="length">length</option>
+                    <option value="pattern">pattern</option>
+                  </select>
+                </div>
+                <div>
+                  <div class="text-[11px] text-slate-500 uppercase mb-1">Show</div>
+                  <select id="seqgal-limit" class="select">
+                    <option value="20">20</option>
+                    <option value="30" selected>30</option>
+                    <option value="50">50</option>
+                    <option value="100">100</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+            <div id="seqgal-status" class="text-xs text-slate-600 mb-3">Waiting for sequences…</div>
+            <div id="seqgal-grid" class="grid md:grid-cols-2 xl:grid-cols-3 gap-3"></div>
+          </div>
+        </div>
+        </div> <!-- /scroll area -->
+      </div>
+
+      <!-- RIGHT: Viewer -->
+      <div class="card p-4 lg:sticky lg:top-4 self-start">
+        <div class="flex flex-col gap-2 mb-3">
+          <div>
+            <div class="text-sm font-semibold">Event Viewer</div>
+            <div class="text-xs text-slate-600">Shows events in a time window. Selections jump time and draw ROI.</div>
+          </div>
+        </div>
+
+        <!-- Viewer layout: plot left, controls right -->
+        <div class="flex gap-4">
+          <!-- Plot (smaller, on left) -->
+          <div class="viewer-plot-wrap flex-shrink-0">
+            <canvas id="events-plot-canvas" style="width: 400px; height: 400px; display: block; background: #000000;"></canvas>
+            <div id="events-plot" style="display: none;"></div>
+          </div>
+
+          <!-- Controls (on right) -->
+          <div class="flex flex-col gap-3 flex-1 min-w-0">
+            <div class="flex items-center gap-2">
+              <div class="text-xs text-slate-600">View</div>
+              <select id="viewer-view" class="select text-xs">
+                <option value="animated" selected>Animated</option>
+                <option value="max">Max projection</option>
+              </select>
+            </div>
+            
+            <div class="flex items-center gap-2">
+              <div class="text-xs text-slate-600">Mode</div>
+              <select id="viewer-mode" class="select text-xs">
+                <option value="classification">Classification</option>
+                <option value="energy">Energy (ToT)</option>
+                <option value="density">Density</option>
+                <option value="time">Time</option>
+              </select>
+            </div>
+
+            <div class="flex items-center gap-2">
+              <button id="viewer-playBtn" class="btn">Play</button>
+              <button id="viewer-resetBtn" class="btn btn-ghost">Reset</button>
+            </div>
+
+            <div class="flex items-center gap-2">
+              <div class="text-xs text-slate-600">Speed</div>
+              <input id="viewer-speed" type="range" min="0" max="2" step="0.05" value="1" class="flex-1" />
+              <div id="viewer-speedLabel" class="text-xs mono text-slate-600 w-12">1.0×</div>
+            </div>
+
+            <div class="flex items-center gap-2">
+              <div class="text-xs text-slate-600">Time center</div>
+              <input id="viewer-tCenter" type="range" min="0" max="1" step="0.001" value="0" class="flex-1" />
+              <div id="viewer-tCenterLabel" class="text-xs mono text-slate-600 w-12">-</div>
+            </div>
+
+            <div class="flex items-center gap-2">
+              <div class="text-xs text-slate-600">Window size</div>
+              <input id="viewer-winSize" type="range" min="1" max="1000000" step="1" value="1000000" class="flex-1" />
+              <div id="viewer-winLabel" class="text-xs mono text-slate-600 w-12">-</div>
+            </div>
+
+            <!-- Stats and legend -->
+            <div class="bg-slate-50 rounded-lg p-3 border border-slate-200">
+              <div id="viewer-stats" class="mono text-xs text-slate-700 leading-tight mb-2"></div>
+              <div id="viewer-legend" class="text-[11px] text-slate-600"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card p-4">
+          <div class="text-sm font-semibold mb-2">Processing Metadata</div>
+          <div class="text-xs text-slate-600 mb-2">
+            Reads embedded parameters from <code>classification.csv</code> (segmentation and classification settings) and <code>chains.csv</code> (sequence analysis settings).
+          </div>
+          <div id="processing-meta" class="text-xs text-slate-700 bg-slate-50 rounded-md p-2 whitespace-pre-wrap">No data loaded yet.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // =====================================================================================
+    // Small, explicit "data layer":
+    // - events: segmented.txt / .t3pa (tab/space/csv-ish)
+    // - classification: classification.csv
+    // - chains: chains.csv
+    // Everything else reads from Store + AppState (filters/selection).
+    // =====================================================================================
+
+    // --------------------------- UI: Tabs ---------------------------
+    function showTab(id) {
+      const tabs = ["class-plots", "class-gallery", "seq-plots", "seq-gallery"];
+      tabs.forEach(t => {
+        document.getElementById("tab-" + t).classList.toggle("hidden", t !== id);
+        document.getElementById("tab-btn-" + t).classList.toggle("tab-active", t === id);
+        document.getElementById("tab-btn-" + t).classList.toggle("tab-inactive", t !== id);
+      });
+      AppState.activeTab = id;
+      scheduleRenderViewer(); // update filter status text
+    }
+    document.getElementById("tab-btn-class-plots").onclick = () => showTab("class-plots");
+    document.getElementById("tab-btn-class-gallery").onclick = () => showTab("class-gallery");
+    document.getElementById("tab-btn-seq-plots").onclick = () => showTab("seq-plots");
+    document.getElementById("tab-btn-seq-gallery").onclick = () => showTab("seq-gallery");
+
+    // --------------------------- Helpers ---------------------------
+    function autoLoadText(path) {
+      return new Promise((resolve, reject) => {
+        fetch(path).then(r => {
+          if (!r.ok) return reject(new Error("HTTP " + r.status));
+          return r.text();
+        }).then(txt => resolve(txt)).catch(reject);
+      });
+    }
+
+    function parseCsvText(text) {
+      return new Promise((resolve, reject) => {
+        Papa.parse(text, {
+          header: true,
+          dynamicTyping: true,
+          skipEmptyLines: true,
+          delimitersToGuess: [",", "\t", " ", ";"],
+          complete: res => resolve(res.data),
+          error: err => reject(err),
+        });
+      });
+    }
+
+    function getField(row, candidates) {
+      for (const c of candidates) {
+        if (row[c] != null && row[c] !== "") return row[c];
+      }
+      return null;
+    }
+
+    function isFiniteNumber(x) {
+      return x != null && x !== "" && Number.isFinite(Number(x));
+    }
+
+    function safeToNumber(x, fallback=null) {
+      const n = Number(x);
+      return Number.isFinite(n) ? n : fallback;
+    }
+
+    function uniq(arr) {
+      return Array.from(new Set(arr));
+    }
+
+    function fmt(n) {
+      try { return Number(n).toLocaleString(); } catch { return String(n); }
+    }
+
+    // Fast binary search helpers (arrays must be sorted ascending)
+    function lowerBound(arr, x) {
+      let lo = 0, hi = arr.length;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (arr[mid] < x) lo = mid + 1;
+        else hi = mid;
+      }
+      return lo;
+    }
+    function upperBound(arr, x) {
+      let lo = 0, hi = arr.length;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (arr[mid] <= x) lo = mid + 1;
+        else hi = mid;
+      }
+      return lo;
+    }
+
+    // Coalesce rapid UI updates into a single render per animation frame
+    let _viewerRaf = 0;
+    function scheduleRenderViewer() {
+      if (_viewerRaf) return;
+      _viewerRaf = requestAnimationFrame(() => {
+        _viewerRaf = 0;
+        renderViewer();
+      });
+    }
+
+    function setViewerControlsForView() {
+      const isMax = (AppState.viewer.view === "max");
+      const playBtn = document.getElementById("viewer-playBtn");
+      const speed = document.getElementById("viewer-speed");
+      const tCenter = document.getElementById("viewer-tCenter");
+      const winSize = document.getElementById("viewer-winSize");
+
+      // In max projection: disable time navigation + playback controls (full time projection)
+      playBtn.disabled = isMax;
+      speed.disabled = isMax;
+      tCenter.disabled = isMax;
+      winSize.disabled = isMax;
+
+      // Make disabled state visually clear
+      const dim = (el) => el.classList.toggle("opacity-50", isMax);
+      [playBtn, speed, tCenter, winSize].forEach(dim);
+    }
+
+    function clamp01(v) { return Math.max(0, Math.min(1, v)); }
+    function fmtSci(n) { return Number(n).toExponential(3); }
+    function percentile(arr, p) {
+      if (arr.length === 0) return 0;
+      const sorted = [...arr].sort((a, b) => a - b);
+      const idx = Math.ceil(sorted.length * p) - 1;
+      return sorted[Math.max(0, Math.min(idx, sorted.length - 1))];
+    }
+
+    // Optimized pixel key: use numeric hash instead of string (264x264 grid)
+    function pixelKey(x, y) {
+      return Math.round(y) * 264 + Math.round(x); // y * 264 + x
+    }
+    function pixelKeyToXY(key) {
+      return [key % 264, Math.floor(key / 264)]; // [x, y]
+    }
+
+    // Compute alpha fade
+    // Precompute a small LUT so we don't do cos/pow per point (perf critical).
+    const _ALPHA_LUT_N = 1024;
+    const _ALPHA_LUT = (() => {
+      const a = new Array(_ALPHA_LUT_N);
+      for (let i = 0; i < _ALPHA_LUT_N; i++) {
+        const dd = i / (_ALPHA_LUT_N - 1);
+        const base = 0.5 * (1 + Math.cos(Math.PI * dd));
+        a[i] = Math.pow(base, 3);
+      }
+      return a;
+    })();
+    function alphaFade(t, center, win) {
+      const half = win / 2;
+      const d = Math.abs(t - center) / half;
+      const dd = Math.max(0, Math.min(1, d));
+      const j = Math.min(_ALPHA_LUT_N - 1, Math.max(0, Math.round(dd * (_ALPHA_LUT_N - 1))));
+      return _ALPHA_LUT[j];
+    }
+
+    // Turbo colormap approximation (matplotlib-like), returns [r,g,b] in 0..255
+    function turboRgb01(x) {
+      const t = clamp01(x);
+      const r = 0.13572138 + t*(4.61539260 + t*(-42.66032258 + t*(132.13108234 + t*(-152.94239396 + t*59.28637943))));
+      const g = 0.09140261 + t*(2.19418839 + t*(4.84296658 + t*(-14.18503333 + t*(4.27729857 + t*2.82956604))));
+      const b = 0.10667330 + t*(12.64194608 + t*(-60.58204836 + t*(110.36276771 + t*(-89.90310912 + t*27.34824973))));
+      return [clamp01(r), clamp01(g), clamp01(b)];
+    }
+    function turboRgb255(x) {
+      const [r,g,b] = turboRgb01(x);
+      return [Math.round(r*255), Math.round(g*255), Math.round(b*255)];
+    }
+
+    const CLASS_RGB = {
+      "Alpha": [220, 20, 20],
+      "Beta":  [20, 180, 220],
+      "Gamma": [20, 220, 20],
+      "Other": [150, 150, 150]
+    };
+
+    // --------------------------- Store + State ---------------------------
+    const Store = {
+      events: null,           // {t, x, y, tot, clusterId?, eventId?}
+      classification: null,   // array of rows
+      chains: null,           // { byChainId, patterns } (see loadChains)
+      indices: {
+        clusterToEventIdx: null, // Map(clusterId -> [eventIdx...])
+        clusterBounds: null,     // Map(clusterId -> {minX,maxX,minY,maxY})
+        classMap: null,          // Map(clusterId -> class string)
+      }
+    };
+
+    const AppState = {
+      activeTab: "class-plots",
+      viewer: {
+        windowSec: 0.5,
+        timeSec: 0,
+        view: "animated", // animated | max
+        mode: "classification",
+        speed: 1.0,
+        isPlaying: false,
+        playTimer: null,
+        isDraggingTimeSlider: false, // Track if user is actively dragging the time slider
+        // current filters are applied globally; viewer uses both classification + sequence filters if set.
+      },
+      filters: {
+        // classification gallery
+        radiation: "ALL",
+        classSortKey: "Cluster_ID",
+        classSortDir: "desc",
+        classLimit: 30,
+        // sequence gallery
+        seqQuery: "",
+        seqExact: false,
+        seqMaxDt: null,     // seconds
+        seqMaxDist: null,   // px
+        seqSortKey: "count",
+        seqLimit: 30,
+      },
+      selection: {
+        clusterId: null,
+        chainId: null,
+        pattern: null,
+      }
+    };
+
+    function updateGlobalStatus() {
+      const parts = [];
+      
+      // Events: total and filtered
+      if (Store.events) {
+        const total = Store.events.t.length;
+        const { clsAllowed, seqAllowed } = computeViewerMask() || {};
+        let filtered = total;
+        
+        // If both filters are active, events must pass both (intersection)
+        // If only one is active, use that one
+        if (clsAllowed && clsAllowed.size && seqAllowed && seqAllowed.size) {
+          // Both filters: intersection
+          const allowed = new Set([...clsAllowed].filter(x => seqAllowed.has(x)));
+          if (Store.events.clusterId) {
+            let count = 0;
+            for (let i = 0; i < Store.events.clusterId.length; i++) {
+              const cid = Store.events.clusterId[i];
+              if (cid != null && allowed.has(String(cid))) count++;
+            }
+            filtered = count;
+          }
+        } else if (clsAllowed && clsAllowed.size) {
+          // Only classification filter
+          if (Store.events.clusterId) {
+            let count = 0;
+            for (let i = 0; i < Store.events.clusterId.length; i++) {
+              const cid = Store.events.clusterId[i];
+              if (cid != null && clsAllowed.has(String(cid))) count++;
+            }
+            filtered = count;
+          }
+        } else if (seqAllowed && seqAllowed.size) {
+          // Only sequence filter
+          if (Store.events.clusterId) {
+            let count = 0;
+            for (let i = 0; i < Store.events.clusterId.length; i++) {
+              const cid = Store.events.clusterId[i];
+              if (cid != null && seqAllowed.has(String(cid))) count++;
+            }
+            filtered = count;
+          }
+        }
+        
+        if (filtered === total) {
+          parts.push(`events: ${fmt(total)}`);
+        } else {
+          parts.push(`events: ${fmt(filtered)}/${fmt(total)}`);
+        }
+      } else {
+        parts.push("events: –");
+      }
+      
+      // Clusters: total and filtered
+      if (Store.classification) {
+        const total = Store.classification.length;
+        const filtered = getClassificationFilteredRows();
+        if (filtered.length === total) {
+          parts.push(`clusters: ${fmt(total)}`);
+        } else {
+          parts.push(`clusters: ${fmt(filtered.length)}/${fmt(total)}`);
+        }
+      } else {
+        parts.push("clusters: –");
+      }
+      
+      // Chains: total and filtered
+      if (Store.chains) {
+        const total = Object.keys(Store.chains.byChainId).length;
+        const filteredChains = getSequenceFilteredChains();
+        if (filteredChains === null || filteredChains.length === total) {
+          parts.push(`chains: ${fmt(total)}`);
+        } else {
+          parts.push(`chains: ${fmt(filteredChains.length)}/${fmt(total)}`);
+        }
+      } else {
+        parts.push("chains: –");
+      }
+      
+      document.getElementById("global-status").textContent = parts.join(" | ");
+    }
+
+    // =====================================================================================
+    // Loading: EVENTS
+    // =====================================================================================
+    async function loadEventsFromText(text) {
+      const data = await parseCsvText(text);
+
+      if (!data || data.length === 0) {
+        throw new Error("File appears to be empty or could not be parsed.");
+      }
+
+      // Diagnostic: show available columns from first row
+      const firstRow = data[0];
+      const availableColumns = Object.keys(firstRow || {});
+      
+      const t = [], x = [], y = [], tot = [], clusterId = [], eventId = [];
+      for (const r of data) {
+        const ti = getField(r, ["arrival_time", "time", "mean_t", "t", "Arrival_Time"]);
+        const xi = getField(r, ["x_pos", "x", "X", "x_mean"]);
+        const yi = getField(r, ["y_pos", "y", "Y", "y_mean"]);
+        if (ti == null || xi == null || yi == null) continue;
+
+        t.push(Number(ti));
+        x.push(Number(xi));
+        y.push(Number(yi));
+        tot.push(Number(getField(r, ["ToT", "tot", "ToT_mean", "energy", "Energy"]) ?? 0));
+
+        const cid = getField(r, ["Cluster_ID", "cluster_id", "cluster", "clusterId"]);
+        clusterId.push(cid != null ? String(cid) : null);
+
+        const eid = getField(r, ["Event_ID", "event_id", "eventId", "id"]);
+        eventId.push(eid != null ? String(eid) : null);
+      }
+      if (!t.length) {
+        const msg = `No valid events found. Expected columns: time (arrival_time/time/mean_t/t/Arrival_Time), x (x_pos/x/X/x_mean), y (y_pos/y/Y/y_mean).\nFound columns: ${availableColumns.join(", ") || "none"}`;
+        throw new Error(msg);
+      }
+
+      // normalize time to start at 0
+      let t0 = t[0];
+      for (let i = 1; i < t.length; i++) if (t[i] < t0) t0 = t[i];
+      const tRel = t.map(v => v - t0);
+
+      // Sort ALL event arrays by time once (critical for fast window rendering)
+      const idx = Array.from({ length: tRel.length }, (_, i) => i);
+      idx.sort((a, b) => tRel[a] - tRel[b]);
+      const tSorted = idx.map(i => tRel[i]);
+      const xSorted = idx.map(i => x[i]);
+      const ySorted = idx.map(i => y[i]);
+      const totRawSorted = idx.map(i => tot[i]);
+      const clusterIdSorted = idx.map(i => clusterId[i]);
+      const eventIdSorted = idx.map(i => eventId[i]);
+
+      // compute energy stats (raw tot values)
+      let minE = totRawSorted[0], maxE = totRawSorted[0];
+      for (let i = 1; i < totRawSorted.length; i++) { if (totRawSorted[i] < minE) minE = totRawSorted[i]; if (totRawSorted[i] > maxE) maxE = totRawSorted[i]; }
+      const totNorm = totRawSorted.map(v => (maxE > minE) ? (v - minE) / (maxE - minE) : 0);
+
+      // global density (events per pixel) for legend - use 95th percentile to avoid outliers
+      const densityCounts = new Map();
+      for (let i = 0; i < xSorted.length; i++) {
+        const key = pixelKey(xSorted[i], ySorted[i]);
+        densityCounts.set(key, (densityCounts.get(key) || 0) + 1);
+      }
+      const densityValues = Array.from(densityCounts.values());
+      const maxDensityGlobal = densityValues.length > 0 ? percentile(densityValues, 0.95) : 1;
+
+      Store.events = {
+        t: tSorted,
+        x: xSorted,
+        y: ySorted,
+        tot: totRawSorted, // raw values for energy mode
+        totNorm: totNorm, // normalized for legacy compatibility
+        clusterId: clusterIdSorted,
+        eventId: eventIdSorted,
+        energyMin: isFinite(minE) ? minE : 0,
+        energyMax: isFinite(maxE) ? maxE : 0,
+        densityGlobalMax: maxDensityGlobal > 0 ? maxDensityGlobal : 1
+      };
+
+      // build indices
+      const m = new Map();
+      const bounds = new Map();
+      for (let i = 0; i < clusterIdSorted.length; i++) {
+        const cid = clusterIdSorted[i];
+        if (!cid) continue;
+        if (!m.has(cid)) m.set(cid, []);
+        m.get(cid).push(i);
+
+        // cluster XY bounds for fast rectangle highlight
+        let b = bounds.get(cid);
+        const xi = xSorted[i], yi = ySorted[i];
+        if (!b) {
+          bounds.set(cid, { minX: xi, maxX: xi, minY: yi, maxY: yi });
+        } else {
+          if (xi < b.minX) b.minX = xi;
+          if (xi > b.maxX) b.maxX = xi;
+          if (yi < b.minY) b.minY = yi;
+          if (yi > b.maxY) b.maxY = yi;
+        }
+      }
+      Store.indices.clusterToEventIdx = m;
+      Store.indices.clusterBounds = bounds;
+
+      // init viewer slider bounds
+      const tMax = tSorted.length ? tSorted[tSorted.length - 1] : 0;
+      const tCenterSlider = document.getElementById("viewer-tCenter");
+      const winSlider = document.getElementById("viewer-winSize");
+      tCenterSlider.min = "0";
+      tCenterSlider.max = "1";
+      tCenterSlider.value = "0.1";
+      
+      const win = Math.max(1, Math.floor(tMax * 0.01));
+      winSlider.min = "1";
+      winSlider.max = String(Math.max(1, Math.floor(tMax / 20)));
+      winSlider.step = String(Math.max(1, Math.floor((tMax / 20) / 2000)));
+      winSlider.value = String(win);
+      
+      AppState.viewer.timeSec = 0.1 * tMax;
+      AppState.viewer.windowSec = win;
+
+      // If the file doesn't have Cluster_IDs, default the mode away from "classification".
+      if (!Store.events.clusterId || Store.events.clusterId.every(v => v == null)) {
+        AppState.viewer.mode = (Store.events.tot && Store.events.tot.length) ? "energy" : "density";
+        document.getElementById("viewer-mode").value = AppState.viewer.mode;
+      }
+      setViewerControlsForView();
+
+      updateGlobalStatus();
+      renderAll();
+    }
+
+    // =====================================================================================
+    // Loading: CLASSIFICATION
+    // =====================================================================================
+    async function loadClassificationFromText(text) {
+      const rows = await parseCsvText(text);
+      Store.classification = rows.filter(r => Object.values(r).some(v => v != null && v !== ""));
+
+      updateGlobalStatus();
+      Store.indices.classMap = null; // invalidate cache
+      initClassificationControls();
+      renderClassPlots();
+      renderClassGallery();
+      renderViewer();
+    }
+
+    // =====================================================================================
+    // Loading: CHAINS
+    // =====================================================================================
+    async function loadChainsFromText(text) {
+      const rows = await parseCsvText(text);
+      const byChainId = {};
+      for (const r of rows) {
+        const id = getField(r, ["Chain_ID", "chain_id", "chain", "ChainId"]);
+        if (id == null) continue;
+        const sid = String(id);
+        if (!byChainId[sid]) byChainId[sid] = [];
+        byChainId[sid].push(r);
+      }
+      for (const chain of Object.values(byChainId)) {
+        chain.sort((a,b) => (safeToNumber(getField(a, ["Sequence_Index","seq_idx","index"]), 0)) - (safeToNumber(getField(b, ["Sequence_Index","seq_idx","index"]), 0)));
+        chain.signature = chain.map(e => String(getField(e, ["Class", "class", "Radiation", "radiation", "Type"]) ?? "?")).join(" - ");
+        chain.length = chain.length;
+      }
+
+      // pattern aggregation for gallery
+      const patterns = {}; // sig -> {sig, count, exampleChainId, meanLen}
+      for (const [cid, chain] of Object.entries(byChainId)) {
+        const sig = chain.signature || chain.map(e => String(getField(e, ["Class","class"]) ?? "?")).join(" - ");
+        if (!patterns[sig]) patterns[sig] = { sig, count: 0, exampleChainId: cid, totalLen: 0, meanLen: 0 };
+        patterns[sig].count += 1;
+        patterns[sig].totalLen += chain.length;
+      }
+      for (const p of Object.values(patterns)) p.meanLen = p.totalLen / Math.max(1, p.count);
+
+      // Store first row for metadata extraction (metadata columns are constant per row)
+      const firstRow = rows.length > 0 ? rows[0] : null;
+
+      Store.chains = { byChainId, patterns, metadata: firstRow };
+      updateGlobalStatus();
+      renderSeqPlots();
+      renderSeqGallery();
+      renderProcessingMeta(); // Update metadata display with sequence info
+      renderViewer();
+    }
+
+    // =====================================================================================
+    // File inputs
+    // =====================================================================================
+    document.getElementById("events-file-input").addEventListener("change", async (e) => {
+      const f = e.target.files[0];
+      if (!f) return;
+      try { 
+        await loadEventsFromText(await f.text()); 
+      } catch (err) { 
+        console.error(err);
+        alert("Error loading events file: " + err.message);
+        updateGlobalStatus();
+      }
+    });
+
+    document.getElementById("class-file-input").addEventListener("change", async (e) => {
+      const f = e.target.files[0];
+      if (!f) return;
+      document.getElementById("class-status").textContent = "Loading classification…";
+      try { await loadClassificationFromText(await f.text()); }
+      catch (err) { console.error(err); document.getElementById("class-status").textContent = "Error: " + err.message; }
+    });
+
+    document.getElementById("seq-file-input").addEventListener("change", async (e) => {
+      const f = e.target.files[0];
+      if (!f) return;
+      document.getElementById("seq-status").textContent = "Loading chains…";
+      try { await loadChainsFromText(await f.text()); }
+      catch (err) { console.error(err); document.getElementById("seq-status").textContent = "Error: " + err.message; }
+    });
+
+    // =====================================================================================
+    // Viewer controls
+    // =====================================================================================
+    function buildClassMap() {
+      if (!Store.classification) return null;
+      const m = new Map();
+      for (const r of Store.classification) {
+        const id = inferClusterId(r);
+        const cls = inferClassField(r);
+        if (id != null) m.set(String(id), cls);
+      }
+      Store.indices.classMap = m;
+      return m;
+    }
+
+    function stopPlayback() {
+      AppState.viewer.isPlaying = false;
+      if (AppState.viewer.playTimer) clearInterval(AppState.viewer.playTimer);
+      AppState.viewer.playTimer = null;
+      document.getElementById("viewer-playBtn").textContent = "Play";
+    }
+
+    document.getElementById("viewer-mode").addEventListener("change", (e) => {
+      AppState.viewer.mode = e.target.value;
+      scheduleRenderViewer();
+    });
+    document.getElementById("viewer-view").addEventListener("change", (e) => {
+      AppState.viewer.view = e.target.value;
+      // Switching view mode changes semantics; stop playback to avoid confusion.
+      stopPlayback();
+      setViewerControlsForView();
+      scheduleRenderViewer();
+    });
+    const tCenterSlider = document.getElementById("viewer-tCenter");
+    // Track when user starts/stops dragging the slider
+    tCenterSlider.addEventListener("mousedown", () => {
+      AppState.viewer.isDraggingTimeSlider = true;
+      // Stop playback if user starts manually scrubbing
+      if (AppState.viewer.isPlaying) {
+        stopPlayback();
+      }
+    });
+    tCenterSlider.addEventListener("mouseup", () => {
+      AppState.viewer.isDraggingTimeSlider = false;
+    });
+    tCenterSlider.addEventListener("touchstart", () => {
+      AppState.viewer.isDraggingTimeSlider = true;
+      // Stop playback if user starts manually scrubbing
+      if (AppState.viewer.isPlaying) {
+        stopPlayback();
+      }
+    });
+    tCenterSlider.addEventListener("touchend", () => {
+      AppState.viewer.isDraggingTimeSlider = false;
+    });
+    tCenterSlider.addEventListener("input", (e) => {
+      if (!Store.events) return;
+      const tMax = Store.events.t.length ? Store.events.t[Store.events.t.length - 1] : 0;
+      const centerFrac = Number(e.target.value);
+      AppState.viewer.timeSec = centerFrac * tMax;
+      // Manual scrubbing: clear ROI selection (otherwise it no longer corresponds to what's in view)
+      AppState.selection.clusterId = null;
+      AppState.selection.chainId = null;
+      AppState.selection.pattern = null;
+      scheduleRenderViewer();
+    });
+    document.getElementById("viewer-winSize").addEventListener("input", (e) => {
+      if (!Store.events) return;
+      const win = Number(e.target.value);
+      AppState.viewer.windowSec = win;
+      scheduleRenderViewer();
+    });
+    document.getElementById("viewer-speed").addEventListener("input", (e) => {
+      AppState.viewer.speed = Number(e.target.value);
+      scheduleRenderViewer();
+    });
+    document.getElementById("viewer-playBtn").addEventListener("click", () => {
+      if (!Store.events) return;
+      if (AppState.viewer.isPlaying) {
+        stopPlayback();
+        return;
+      }
+      // Starting playback: clear ROI selection (it quickly becomes stale while playing)
+      AppState.selection.clusterId = null;
+      AppState.selection.chainId = null;
+      AppState.selection.pattern = null;
+      AppState.viewer.isPlaying = true;
+      document.getElementById("viewer-playBtn").textContent = "Pause";
+      const slider = document.getElementById("viewer-tCenter");
+      const tMax = Store.events.t.length > 0 ? Store.events.t[Store.events.t.length - 1] : 0;
+      if (tMax <= 0) {
+        stopPlayback();
+        return;
+      }
+      // Advance by fraction of total time range per frame (independent of window size, scales with data)
+      // At 1x speed, advance by 0.0005 of total time per frame (0.25x of original 0.002)
+      const TIME_FRACTION_PER_FRAME = 0.0005; // fraction of total time per frame at 1x speed
+      const BASE_FRAME_INTERVAL_MS = 50; // base milliseconds between frames at 1x speed
+      const SLIDER_STEP = 0.001; // slider precision
+      
+      // Adjust frame interval based on speed to maintain reasonable increment per frame
+      // At low speeds, update less frequently but with larger increments to avoid precision issues
+      const speed = AppState.viewer.speed || 1.0;
+      // Handle speed 0 - use a reasonable interval, but it won't advance anyway
+      const minSpeed = 0.01; // minimum effective speed for interval calculation (avoid division by 0)
+      const effectiveSpeed = Math.max(speed, minSpeed);
+      const frameInterval = Math.round(BASE_FRAME_INTERVAL_MS / effectiveSpeed);
+      
+      // Track actual current fraction (not just slider value, which may lag)
+      let currentFrac = Number(slider.value) || 0;
+      
+      AppState.viewer.playTimer = setInterval(() => {
+        if (!Store.events) {
+          stopPlayback();
+          return;
+        }
+        const currentSpeed = AppState.viewer.speed || 1.0;
+        
+        // At speed 0, don't advance at all
+        if (currentSpeed <= 0) {
+          scheduleRenderViewer();
+          return;
+        }
+        
+        // Advance by fraction of total time range, scaled by speed (independent of window size)
+        const fracIncrement = TIME_FRACTION_PER_FRAME * currentSpeed;
+        currentFrac += fracIncrement;
+        const nextTime = currentFrac * tMax;
+        
+        // Only stop if we've actually reached or exceeded the end
+        if (currentFrac >= 0.9999) {
+          stopPlayback();
+          currentFrac = 1;
+          slider.value = "1";
+          AppState.viewer.timeSec = tMax;
+          scheduleRenderViewer();
+          return;
+        }
+        
+        // Update time state immediately for smooth rendering
+        AppState.viewer.timeSec = nextTime;
+        
+        // Update slider when we have at least one step of change
+        // Round to nearest step to avoid precision issues
+        const sliderFrac = Math.round(currentFrac / SLIDER_STEP) * SLIDER_STEP;
+        const currentSliderFrac = Number(slider.value) || 0;
+        if (Math.abs(sliderFrac - currentSliderFrac) >= SLIDER_STEP) {
+          slider.value = String(Math.max(0, Math.min(1, sliderFrac)));
+        }
+        
+        // Always render to keep animation smooth
+        scheduleRenderViewer();
+      }, frameInterval);
+    });
+    document.getElementById("viewer-resetBtn").addEventListener("click", () => {
+      if (!Store.events) return;
+      stopPlayback();
+      document.getElementById("viewer-tCenter").value = "0.1";
+      const tMax = Store.events.t.reduce((a,b) => b > a ? b : a, 0);
+      AppState.viewer.timeSec = 0.1 * tMax;
+      scheduleRenderViewer();
+    });
+    document.getElementById("viewer-reset").addEventListener("click", () => {
+      AppState.filters.radiation = "ALL";
+      AppState.filters.seqQuery = "";
+      AppState.filters.seqExact = false;
+      AppState.filters.seqMaxDt = null;
+      AppState.filters.seqMaxDist = null;
+      AppState.selection.clusterId = null;
+      AppState.selection.chainId = null;
+      AppState.selection.pattern = null;
+      initClassificationControls(); // will keep sort key/dir
+      document.getElementById("seqgal-query").value = "";
+      document.getElementById("seqgal-exact").checked = false;
+      document.getElementById("seqgal-maxdt").value = "";
+      document.getElementById("seqgal-maxdist").value = "";
+      renderAll();
+    });
+
+    // =====================================================================================
+    // Classification: controls + plots (aggregated only)
+    // =====================================================================================
+    function inferRadiationField(row) {
+      // The classification CSV uses "class" field with values: Alpha, Beta, Gamma, Other
+      const v = getField(row, ["class","Class","radiation_type","Radiation_Type","radiation","Radiation","type","Type"]);
+      return v == null ? "Unknown" : String(v);
+    }
+    function inferClassField(row) {
+      // Same as radiation type - "class" is the classification
+      const v = getField(row, ["class","Class","label","Label"]);
+      return v == null ? "Other" : String(v);
+    }
+
+    function inferClusterId(row) {
+      const v = getField(row, ["Cluster_ID","cluster_id","cluster","id","ID"]);
+      return v == null ? null : String(v);
+    }
+
+    function inferNumericColumns(rows) {
+      if (!rows || !rows.length) return [];
+      const sample = rows.slice(0, 200);
+      const keys = Object.keys(rows[0] || {});
+      const numericKeys = [];
+      for (const k of keys) {
+        if (["Cluster_ID","cluster_id","id","ID","class","Class","radiation_type","Radiation_Type","radiation","Radiation","type","Type"].includes(k)) continue;
+        let good = 0, seen = 0;
+        for (const r of sample) {
+          const v = r[k];
+          if (v == null || v === "") continue;
+          seen += 1;
+          if (isFiniteNumber(v)) good += 1;
+        }
+        if (seen >= 10 && good / seen > 0.8) numericKeys.push(k);
+      }
+      numericKeys.sort();
+      return numericKeys;
+    }
+
+    function initClassificationControls() {
+      // Radiation dropdown
+      const radSel = document.getElementById("classgal-rad");
+      radSel.innerHTML = "";
+      const rads = Store.classification ? uniq(Store.classification.map(inferRadiationField)).sort() : [];
+      const options = ["ALL", ...rads];
+      for (const o of options) {
+        const opt = document.createElement("option");
+        opt.value = o;
+        opt.textContent = o === "ALL" ? "All" : o;
+        radSel.appendChild(opt);
+      }
+      radSel.value = AppState.filters.radiation;
+      radSel.onchange = (e) => { AppState.filters.radiation = e.target.value; renderAll(); };
+
+      // Sort dropdown for gallery
+      const sortSel = document.getElementById("classgal-sort");
+      sortSel.innerHTML = "";
+      const numericCols = Store.classification ? inferNumericColumns(Store.classification) : [];
+      const sortKeys = ["Cluster_ID", ...numericCols];
+      for (const k of sortKeys) {
+        const opt = document.createElement("option");
+        opt.value = k;
+        opt.textContent = k;
+        sortSel.appendChild(opt);
+      }
+      if (!sortKeys.includes(AppState.filters.classSortKey)) AppState.filters.classSortKey = sortKeys[0] || "Cluster_ID";
+      sortSel.value = AppState.filters.classSortKey;
+      sortSel.onchange = (e) => { AppState.filters.classSortKey = e.target.value; renderClassGallery(); renderViewer(); };
+
+      // Direction toggle
+      const dirBtn = document.getElementById("classgal-dir");
+      function syncDirBtn() { dirBtn.textContent = AppState.filters.classSortDir === "asc" ? "↑ Asc" : "↓ Desc"; }
+      syncDirBtn();
+      dirBtn.onclick = () => { AppState.filters.classSortDir = AppState.filters.classSortDir === "asc" ? "desc" : "asc"; syncDirBtn(); renderClassGallery(); renderViewer(); };
+
+      // Limit
+      const limitSel = document.getElementById("classgal-limit");
+      limitSel.value = String(AppState.filters.classLimit);
+      limitSel.onchange = (e) => { AppState.filters.classLimit = Number(e.target.value); renderClassGallery(); };
+
+      // Refresh button
+      document.getElementById("class-refresh").onclick = () => { renderClassPlots(); renderClassGallery(); renderViewer(); };
+    }
+
+    function renderClassPlots() {
+      const statusEl = document.getElementById("class-status");
+      const allRows = Store.classification;
+      const rows = Store.classification ? getClassificationFilteredRows() : null;
+      if (!rows || !rows.length) {
+        statusEl.textContent = "No classification data loaded.";
+        Plotly.react("class-plot-counts", [], {}, {});
+        Plotly.react("class-plot-energy", [], {}, {});
+        Plotly.react("class-plot-radius", [], {}, {});
+        document.getElementById("class-total").textContent = "–";
+        document.getElementById("class-rad-counts").textContent = "";
+        document.getElementById("class-mean-energy").textContent = "–";
+        return;
+      }
+      statusEl.textContent = `Clusters: ${fmt(rows.length)}${(allRows && allRows.length !== rows.length) ? ` (filtered from ${fmt(allRows.length)})` : ""}.`;
+      document.getElementById("class-total").textContent = fmt(rows.length);
+
+      // counts by class
+      const classCounts = {};
+      const radCounts = {};
+      let eSum = 0, eN = 0;
+      const energies = [];
+      const radii = [];
+      const roundness = [];
+      const aspect = [];
+      const energiesByRad = {};
+      const radiiByRad = {};
+      const roundnessByRad = {};
+      const aspectByRad = {};
+
+      for (const r of rows) {
+        const c = inferClassField(r);
+        classCounts[c] = (classCounts[c] || 0) + 1;
+        const rad = inferRadiationField(r);
+        radCounts[rad] = (radCounts[rad] || 0) + 1;
+
+        const me = getField(r, ["mean_energy","Mean_Energy","energy_mean","energy"]);
+        if (isFiniteNumber(me)) {
+          eSum += Number(me);
+          eN += 1;
+          energies.push(Number(me));
+          if (!energiesByRad[rad]) energiesByRad[rad] = [];
+          energiesByRad[rad].push(Number(me));
+        }
+
+        const mr = getField(r, ["max_radius","Max_Radius","radius_max","max_r"]);
+        if (isFiniteNumber(mr)) {
+          radii.push(Number(mr));
+          if (!radiiByRad[rad]) radiiByRad[rad] = [];
+          radiiByRad[rad].push(Number(mr));
+        }
+
+        const rr = getField(r, ["mask_roundness","roundness","Roundness"]);
+        // Calculate aspect ratio from width/height if not present
+        let ar = getField(r, ["aspect_ratio","Aspect_Ratio","aspect"]);
+        if (!isFiniteNumber(ar)) {
+          const w = getField(r, ["width","Width"]);
+          const h = getField(r, ["height","Height"]);
+          if (isFiniteNumber(w) && isFiniteNumber(h) && Number(h) > 0) {
+            ar = Number(w) / Number(h);
+          }
+        }
+        // Only add if both are valid (for heatmap)
+        if (isFiniteNumber(rr) && isFiniteNumber(ar)) {
+          roundness.push(Number(rr));
+          aspect.push(Number(ar));
+          if (!roundnessByRad[rad]) {
+            roundnessByRad[rad] = [];
+            aspectByRad[rad] = [];
+          }
+          roundnessByRad[rad].push(Number(rr));
+          aspectByRad[rad].push(Number(ar));
+        }
+      }
+      document.getElementById("class-mean-energy").textContent = eN ? (eSum / eN).toFixed(2) : "–";
+
+      // rad counts text
+      const radLines = Object.entries(radCounts).sort((a,b) => b[1] - a[1]).slice(0, 12).map(([k,v]) => `${k}: ${v}`);
+      document.getElementById("class-rad-counts").textContent = radLines.join("\n");
+
+      // Color mapping for radiation types
+      const radColors = { "Alpha": "rgba(220,20,20,0.7)", "Beta": "rgba(20,180,220,0.7)", "Gamma": "rgba(20,220,20,0.7)", "Other": "rgba(150,150,150,0.7)", "Unknown": "rgba(150,150,150,0.7)" };
+
+      // Plot: class counts (color by radiation type)
+      const ccEntries = Object.entries(classCounts).sort((a,b)=>b[1]-a[1]);
+      const classColors = ccEntries.map(e => {
+        // Find the radiation type for this class by checking a sample row
+        const sampleRow = rows.find(r => inferClassField(r) === e[0]);
+        if (sampleRow) {
+          const rad = inferRadiationField(sampleRow);
+          return radColors[rad] || "rgba(150,150,150,0.7)";
+        }
+        return "#38bdf8";
+      });
+      Plotly.react("class-plot-counts", [{
+        x: ccEntries.map(e => e[0]),
+        y: ccEntries.map(e => e[1]),
+        type: "bar",
+        marker: { color: classColors }
+      }], {
+        margin: { t: 10, r: 10, b: 70, l: 40 },
+        xaxis: { tickangle: -30, gridcolor: "rgba(148,163,184,0.12)" },
+        yaxis: { title: "count", gridcolor: "rgba(148,163,184,0.12)" },
+        paper_bgcolor: "rgba(0,0,0,0)",
+        plot_bgcolor: "rgba(0,0,0,0)",
+      }, { responsive: true });
+
+      // Plot: energy histogram (grouped by radiation type)
+      const energyTraces = [];
+      for (const [rad, vals] of Object.entries(energiesByRad)) {
+        if (vals.length > 0) {
+          energyTraces.push({
+            x: vals,
+            type: "histogram",
+            nbinsx: 60,
+            name: rad,
+            marker: { color: radColors[rad] || "rgba(150,150,150,0.7)" },
+            opacity: 0.7
+          });
+        }
+      }
+      Plotly.react("class-plot-energy", energyTraces.length > 0 ? energyTraces : [{
+        x: energies,
+        type: "histogram",
+        nbinsx: 60,
+        marker: { color: "#a78bfa" }
+      }], {
+        margin: { t: 10, r: 10, b: 40, l: 50 },
+        xaxis: { title: "mean_energy", gridcolor: "rgba(148,163,184,0.12)" },
+        yaxis: { title: "count", gridcolor: "rgba(148,163,184,0.12)" },
+        paper_bgcolor: "rgba(0,0,0,0)",
+        plot_bgcolor: "rgba(0,0,0,0)",
+        barmode: "overlay",
+        showlegend: energyTraces.length > 1
+      }, { responsive: true });
+
+      // Plot: radius histogram (grouped by radiation type)
+      const radiusTraces = [];
+      for (const [rad, vals] of Object.entries(radiiByRad)) {
+        if (vals.length > 0) {
+          radiusTraces.push({
+            x: vals,
+            type: "histogram",
+            nbinsx: 60,
+            name: rad,
+            marker: { color: radColors[rad] || "rgba(150,150,150,0.7)" },
+            opacity: 0.7
+          });
+        }
+      }
+      Plotly.react("class-plot-radius", radiusTraces.length > 0 ? radiusTraces : [{
+        x: radii,
+        type: "histogram",
+        nbinsx: 60,
+        marker: { color: "#34d399" }
+      }], {
+        margin: { t: 10, r: 10, b: 40, l: 50 },
+        xaxis: { title: "max_radius", gridcolor: "rgba(148,163,184,0.12)" },
+        yaxis: { title: "count", gridcolor: "rgba(148,163,184,0.12)" },
+        paper_bgcolor: "rgba(0,0,0,0)",
+        plot_bgcolor: "rgba(0,0,0,0)",
+        barmode: "overlay",
+        showlegend: radiusTraces.length > 1
+      }, { responsive: true });
+
+      renderProcessingMeta();
+    }
+
+    // =====================================================================================
+    // Processing metadata display
+    // =====================================================================================
+    function renderProcessingMeta() {
+      const metaEl = document.getElementById("processing-meta");
+      if (!metaEl) return;
+
+      const lines = [];
+
+      function push(label, key, source) {
+        if (source && source[key] !== undefined && source[key] !== null && source[key] !== "") {
+          lines.push(label + ": " + source[key]);
+        }
+      }
+
+      // Classification metadata (from classification.csv)
+      if (Store.classification && Store.classification.length > 0) {
+        const m = Store.classification[0];
+        push("Segmentation time window (ns)", "seg_time_window_ns", m);
+        push("Segmentation spatial radius (px)", "seg_spatial_radius_px", m);
+        push("Segmentation input file", "seg_input_file", m);
+        push("Segmentation start row", "seg_start_row", m);
+        push("Segmentation n_rows", "seg_n_rows", m);
+        push("Classify input file", "classify_input_file", m);
+        push("Classify start row", "classify_start_row", m);
+        push("Classify n_rows", "classify_n_rows", m);
+      }
+
+      // Sequence metadata (from chains.csv)
+      if (Store.chains && Store.chains.metadata) {
+        const seqMeta = Store.chains.metadata;
+        push("Sequence spatial radius (px)", "seq_spatial_radius_px", seqMeta);
+        push("Sequence time window (ns)", "seq_time_window_ns", seqMeta);
+        push("Sequence max chain length", "seq_max_chain_length", seqMeta);
+        push("Sequence pattern lookup file", "seq_pattern_lookup_file", seqMeta);
+        push("Sequence input file", "seq_input_file", seqMeta);
+      }
+
+      if (lines.length === 0) {
+        metaEl.textContent = "No data loaded yet.";
+      } else {
+        metaEl.textContent = lines.join("\n");
+      }
+    }
+
+    // =====================================================================================
+    // Classification gallery (filter/sort/limit + selection -> viewer)
+    // =====================================================================================
+    function getClassificationFilteredRows() {
+      if (!Store.classification) return [];
+      const rad = AppState.filters.radiation;
+      let rows = Store.classification;
+      if (rad !== "ALL") rows = rows.filter(r => inferRadiationField(r) === rad);
+      // Also respect the active sequence filter: only show clusters that appear in allowed sequences.
+      // This keeps the classification gallery consistent with what the viewer is showing.
+      const seqAllowed = getAllowedClusterIdsFromSequenceFilter();
+      if (seqAllowed && seqAllowed.size) {
+        rows = rows.filter(r => {
+          const cid = inferClusterId(r);
+          return cid != null && seqAllowed.has(String(cid));
+        });
+      }
+      return rows;
+    }
+
+    function sortRows(rows, key, dir) {
+      const sign = dir === "asc" ? 1 : -1;
+      return rows.slice().sort((a,b) => {
+        const av = (key === "Cluster_ID") ? inferClusterId(a) : a[key];
+        const bv = (key === "Cluster_ID") ? inferClusterId(b) : b[key];
+        const an = safeToNumber(av, null);
+        const bn = safeToNumber(bv, null);
+        if (an != null && bn != null) return sign * (an - bn);
+        return sign * String(av ?? "").localeCompare(String(bv ?? ""));
+      });
+    }
+
+    function renderClassGallery() {
+      const grid = document.getElementById("classgal-grid");
+      const status = document.getElementById("classgal-status");
+      grid.innerHTML = "";
+
+      if (!Store.classification) {
+        status.textContent = "Waiting for classification data…";
+        return;
+      }
+
+      const filtered = getClassificationFilteredRows();
+      const sorted = sortRows(filtered, AppState.filters.classSortKey, AppState.filters.classSortDir);
+      const limit = AppState.filters.classLimit;
+      const shown = sorted.slice(0, limit);
+
+      status.textContent = `Filtered: ${fmt(filtered.length)} | showing first ${fmt(shown.length)} (sorted by ${AppState.filters.classSortKey} ${AppState.filters.classSortDir}).`;
+
+      for (const r of shown) {
+        const cid = inferClusterId(r) ?? "–";
+        const rad = inferRadiationField(r);
+        const thumbnail = getField(r, ["thumbnail_png","thumbnail","Thumbnail","Thumbnail_PNG"]);
+
+        const el = document.createElement("div");
+        el.className = "gallery-item";
+        if (AppState.selection.clusterId && String(AppState.selection.clusterId) === String(cid)) el.classList.add("selected");
+
+        const thumbnailHtml = thumbnail ? `<img src="${thumbnail}" alt="Cluster ${cid}" class="thumbnail w-full h-auto rounded border border-slate-300" style="max-height: 90px; object-fit: contain;" />` : "";
+
+        el.innerHTML = `
+          ${thumbnailHtml}
+          <div class="flex items-center justify-between gap-2 mt-2">
+            <div class="text-sm font-semibold">Cluster ${cid}</div>
+            <div class="text-xs"><span class="chip">${rad}</span></div>
+          </div>
+        `;
+
+        el.onclick = () => {
+          AppState.selection.clusterId = cid;
+          AppState.selection.chainId = null;
+          AppState.selection.pattern = null;
+          jumpViewerToCluster(cid);
+          renderClassGallery();
+          renderSeqGallery();
+          renderViewer();
+        };
+
+        grid.appendChild(el);
+      }
+    }
+
+    function jumpViewerToCluster(cid) {
+      if (!Store.events) return;
+      const idxs = Store.indices.clusterToEventIdx?.get(String(cid));
+      if (!idxs || !idxs.length) return;
+
+      // choose a representative time (median)
+      const ts = idxs.map(i => Store.events.t[i]).sort((a,b)=>a-b);
+      const tMid = ts[Math.floor(ts.length/2)];
+      setViewerTime(tMid);
+    }
+
+    function setViewerTime(t) {
+      if (!Store.events) return;
+      const tMax = Store.events.t.reduce((a,b) => b > a ? b : a, 0);
+      if (tMax <= 0) return;
+      const slider = document.getElementById("viewer-tCenter");
+      const tClamped = Math.max(0, Math.min(tMax, Number(t)));
+      const frac = tClamped / tMax;
+      slider.value = String(Math.max(0, Math.min(1, frac)));
+      AppState.viewer.timeSec = tClamped;
+    }
+
+    // =====================================================================================
+    // Sequences: plots + gallery
+    // =====================================================================================
+    document.getElementById("seq-refresh").onclick = () => { renderSeqPlots(); renderSeqGallery(); renderViewer(); };
+
+    function renderSeqPlots() {
+      const statusEl = document.getElementById("seq-status");
+      if (!Store.chains || !Object.keys(Store.chains.byChainId).length) {
+        statusEl.textContent = "No chains loaded.";
+        Plotly.react("seq-patterns", [], {}, {});
+        Plotly.react("seq-lengths", [], {}, {});
+        Plotly.react("seq-time-deltas", [], {}, {});
+        return;
+      }
+      const allChains = Object.entries(Store.chains.byChainId).map(([chainId, chain]) => ({ chainId, chain }));
+      const filteredChains = getSequenceFilteredChains(); // null if no filter
+      const chainList = (filteredChains === null) ? allChains.map(e => e.chain) : filteredChains.map(e => e.chain);
+      const shownCount = chainList.length;
+      statusEl.textContent = `Chains: ${fmt(shownCount)}${(filteredChains !== null) ? ` (filtered from ${fmt(allChains.length)})` : ""}.`;
+
+      const patternCounts = {};
+      for (const chain of chainList) {
+        const sig = chain.signature || chain.map(e => String(getField(e, ["Class","class"]) ?? "?")).join(" - ");
+        patternCounts[sig] = (patternCounts[sig] || 0) + 1;
+      }
+      const entries = Object.entries(patternCounts).sort((a,b) => b[1] - a[1]).slice(0, 15);
+
+      Plotly.react("seq-patterns", [{
+        x: entries.map(e => e[1]),
+        y: entries.map(e => e[0]),
+        type: "bar",
+        orientation: "h",
+        marker: { color: "#38bdf8" }
+      }], {
+        margin: { l: 180, t: 10, b: 30, r: 20 },
+        xaxis: { title: "count", gridcolor: "rgba(148,163,184,0.12)" },
+        yaxis: { gridcolor: "rgba(148,163,184,0.12)" },
+        paper_bgcolor: "rgba(0,0,0,0)",
+        plot_bgcolor: "rgba(0,0,0,0)",
+        autosize: true
+      }, { responsive: true, autosize: true });
+
+      const lengths = chainList.map(c => c.length);
+      Plotly.react("seq-lengths", [{
+        x: lengths,
+        type: "histogram",
+        nbinsx: 40,
+        marker: { color: "#a78bfa" }
+      }], {
+        margin: { t: 10, b: 40, l: 50, r: 10 },
+        xaxis: { title: "chain length", gridcolor: "rgba(148,163,184,0.12)" },
+        yaxis: { title: "count", gridcolor: "rgba(148,163,184,0.12)" },
+        paper_bgcolor: "rgba(0,0,0,0)",
+        plot_bgcolor: "rgba(0,0,0,0)",
+        autosize: true
+      }, { responsive: true, autosize: true });
+
+      // Time delta distribution (seconds)
+      const deltas = [];
+      for (const chain of chainList) {
+        for (let i = 0; i < chain.length; i++) {
+          const dt = getField(chain[i], ["Time_Delta","time_delta","TimeDelta"]);
+          if (isFiniteNumber(dt) && Number(dt) > 0) deltas.push(Number(dt));
+        }
+      }
+      if (deltas.length) {
+        Plotly.react("seq-time-deltas", [{
+          x: deltas,
+          type: "histogram",
+          nbinsx: 60,
+          marker: { color: "#38bdf8" }
+        }], {
+          margin: { t: 10, b: 40, l: 50, r: 10 },
+          xaxis: { title: "Time_Delta (s)", gridcolor: "rgba(148,163,184,0.12)" },
+          yaxis: { title: "count", gridcolor: "rgba(148,163,184,0.12)" },
+          paper_bgcolor: "rgba(0,0,0,0)",
+          plot_bgcolor: "rgba(0,0,0,0)",
+          autosize: true
+        }, { responsive: true, autosize: true });
+      } else {
+        Plotly.react("seq-time-deltas", [], {
+          margin: { t: 10, b: 40, l: 50, r: 10 },
+          xaxis: { title: "Time_Delta (s)", gridcolor: "rgba(148,163,184,0.12)" },
+          yaxis: { title: "count", gridcolor: "rgba(148,163,184,0.12)" },
+          paper_bgcolor: "rgba(0,0,0,0)",
+          plot_bgcolor: "rgba(0,0,0,0)",
+          autosize: true
+        }, { responsive: true, autosize: true });
+      }
+    }
+
+    function getSequenceFilteredPatterns() {
+      if (!Store.chains) return [];
+      const all = Object.values(Store.chains.patterns);
+      const q = (AppState.filters.seqQuery || "").trim();
+      if (!q) return all;
+
+      if (AppState.filters.seqExact) {
+        const qLower = q.toLowerCase();
+        return all.filter(p => p.sig.toLowerCase() === qLower);
+      }
+      const qLower = q.toLowerCase();
+      return all.filter(p => p.sig.toLowerCase().includes(qLower));
+    }
+
+    function chainPassesSeqConstraints(chain) {
+      const maxDt = AppState.filters.seqMaxDt;
+      const maxDist = AppState.filters.seqMaxDist;
+      if (maxDt == null && maxDist == null) return true;
+      for (let i = 0; i < chain.length; i++) {
+        const dt = getField(chain[i], ["Time_Delta","time_delta","TimeDelta"]);
+        const dd = getField(chain[i], ["Dist_Delta","dist_delta","DistDelta"]);
+        if (maxDt != null && isFiniteNumber(dt) && Number(dt) > maxDt) return false;
+        if (maxDist != null && isFiniteNumber(dd) && Number(dd) > maxDist) return false;
+      }
+      return true;
+    }
+
+    function getSequenceFilteredChains() {
+      if (!Store.chains) return [];
+      const q = (AppState.filters.seqQuery || "").trim();
+      const hasConstraints = (AppState.filters.seqMaxDt != null) || (AppState.filters.seqMaxDist != null);
+      if (!q && !hasConstraints) return null; // no filter/constraints -> use patterns
+
+      const qLower = q.toLowerCase();
+      const matchingChains = [];
+
+      for (const [chainId, chain] of Object.entries(Store.chains.byChainId)) {
+        const sig = chain.signature || chain.map(e => String(getField(e, ["Class","class"]) ?? "?")).join(" - ");
+        const sigLower = sig.toLowerCase();
+        if (!chainPassesSeqConstraints(chain)) continue;
+        
+        if (AppState.filters.seqExact) {
+          if (sigLower === qLower) {
+            matchingChains.push({ chainId, chain, signature: sig, length: chain.length });
+          }
+        } else {
+          if (!q || sigLower.includes(qLower)) {
+            matchingChains.push({ chainId, chain, signature: sig, length: chain.length });
+          }
+        }
+      }
+
+      return matchingChains;
+    }
+
+    function renderSeqGallery() {
+      const grid = document.getElementById("seqgal-grid");
+      const status = document.getElementById("seqgal-status");
+      grid.innerHTML = "";
+
+      if (!Store.chains) {
+        status.textContent = "Waiting for sequences…";
+        return;
+      }
+
+      const q = (AppState.filters.seqQuery || "").trim();
+      const filteredChains = getSequenceFilteredChains();
+      const sortKey = AppState.filters.seqSortKey;
+      const limit = AppState.filters.seqLimit;
+
+      // If filter is active, show individual chains; otherwise show aggregated patterns
+      if (filteredChains !== null && filteredChains.length > 0) {
+        // Show individual chains
+        const sorted = filteredChains.slice().sort((a,b) => {
+          if (sortKey === "count") return b.length - a.length; // Use length as proxy for count when showing chains
+          if (sortKey === "length") return b.length - a.length;
+          return a.signature.localeCompare(b.signature);
+        });
+
+        const shown = sorted.slice(0, limit);
+        status.textContent = `Filtered chains: ${fmt(filteredChains.length)} | showing first ${fmt(shown.length)}.`;
+
+        for (const chainData of shown) {
+          // In "filtered chains" mode multiple items share the same signature.
+          // Only highlight the clicked chain, not every chain with the same pattern.
+          const selected = AppState.selection.chainId === chainData.chainId;
+          const el = document.createElement("div");
+          el.className = "gallery-item";
+          if (selected) el.classList.add("selected");
+
+          const chain = chainData.chain;
+          let thumbnailsHtml = "";
+          let timeDistHtml = "";
+
+          if (chain && chain.length > 0) {
+            // Show thumbnails in sequence
+            thumbnailsHtml = '<div class="flex gap-2 mb-2 flex-wrap items-center">';
+            for (let i = 0; i < chain.length; i++) {
+              const item = chain[i];
+              const thumb = getField(item, ["Thumbnail", "thumbnail_png", "thumbnail"]);
+              const cls = getField(item, ["Class", "class"]) || "?";
+              
+              // Show thumbnail or placeholder
+              if (thumb) {
+                thumbnailsHtml += `<div class="flex flex-col items-center gap-1">
+                  <img src="${thumb}" alt="${cls}" class="thumbnail w-16 h-16 border border-slate-700 rounded" style="object-fit: contain;" />
+                  <span class="text-[10px] text-slate-500">${cls}</span>
+                </div>`;
+              } else {
+                thumbnailsHtml += `<div class="flex flex-col items-center gap-1">
+                  <div class="w-16 h-16 border border-slate-700 rounded bg-slate-800 flex items-center justify-center">
+                    <span class="text-xs text-slate-500">${cls}</span>
+                  </div>
+                  <span class="text-[10px] text-slate-500">${cls}</span>
+                </div>`;
+              }
+              
+              // Add arrow and time/distance between items (except last)
+              if (i < chain.length - 1) {
+                const nextItem = chain[i + 1];
+                const nextTimeDelta = getField(nextItem, ["Time_Delta", "time_delta", "TimeDelta"]);
+                const nextDistDelta = getField(nextItem, ["Dist_Delta", "dist_delta", "DistDelta"]);
+                
+                const dt = isFiniteNumber(nextTimeDelta) ? Number(nextTimeDelta) : null;
+                const dd = isFiniteNumber(nextDistDelta) ? Number(nextDistDelta) : null;
+                
+                thumbnailsHtml += `<div class="flex flex-col items-center justify-center text-[10px] text-slate-500 px-1 min-w-[50px]">
+                  <div class="text-slate-500">→</div>
+                  ${dt != null ? `<div class="text-slate-500 mono">${dt.toExponential(2)}s</div>` : ''}
+                  ${dd != null ? `<div class="text-slate-500 mono">${dd.toFixed(1)}px</div>` : ''}
+                </div>`;
+              }
+            }
+            thumbnailsHtml += '</div>';
+
+            // Summary time/distance info
+            const timeDeltas = [];
+            const distDeltas = [];
+            for (let i = 1; i < chain.length; i++) {
+              const item = chain[i];
+              const dt = getField(item, ["Time_Delta", "time_delta", "TimeDelta"]);
+              const dd = getField(item, ["Dist_Delta", "dist_delta", "DistDelta"]);
+              if (isFiniteNumber(dt)) timeDeltas.push(Number(dt));
+              if (isFiniteNumber(dd)) distDeltas.push(Number(dd));
+            }
+            
+            if (timeDeltas.length > 0 || distDeltas.length > 0) {
+              const avgTime = timeDeltas.length > 0 ? timeDeltas.reduce((a,b) => a+b, 0) / timeDeltas.length : null;
+              const avgDist = distDeltas.length > 0 ? distDeltas.reduce((a,b) => a+b, 0) / distDeltas.length : null;
+              const totalTime = timeDeltas.reduce((a,b) => a+b, 0);
+              const totalDist = distDeltas.reduce((a,b) => a+b, 0);
+              
+              timeDistHtml = '<div class="text-xs text-slate-300 mt-2 space-y-1">';
+              if (avgTime != null) {
+                timeDistHtml += `<div>Avg time gap: <span class="mono text-slate-200">${avgTime.toExponential(2)}s</span></div>`;
+              }
+              if (avgDist != null) {
+                timeDistHtml += `<div>Avg distance: <span class="mono text-slate-200">${avgDist.toFixed(2)}px</span></div>`;
+              }
+              if (timeDeltas.length > 1) {
+                timeDistHtml += `<div>Total time: <span class="mono text-slate-200">${totalTime.toExponential(2)}s</span></div>`;
+              }
+              if (distDeltas.length > 1) {
+                timeDistHtml += `<div>Total distance: <span class="mono text-slate-200">${totalDist.toFixed(2)}px</span></div>`;
+              }
+              timeDistHtml += '</div>';
+            }
+          }
+
+          el.innerHTML = `
+            <div class="text-sm font-semibold mono mb-2">${chainData.signature}</div>
+            ${thumbnailsHtml}
+          `;
+
+          el.onclick = () => {
+            AppState.selection.chainId = chainData.chainId;
+            AppState.selection.clusterId = null;
+            AppState.selection.pattern = null; // avoid selecting all items that share signature
+            jumpViewerToChain(chainData.chainId);
+            renderSeqGallery();
+            renderClassGallery();
+            renderViewer();
+          };
+
+          grid.appendChild(el);
+        }
+      } else {
+        // Show aggregated patterns (no filter or no matches)
+        const filtered = getSequenceFilteredPatterns();
+        const sorted = filtered.slice().sort((a,b) => {
+          if (sortKey === "count") return b.count - a.count;
+          if (sortKey === "length") return (b.meanLen - a.meanLen);
+          return a.sig.localeCompare(b.sig);
+        });
+
+        const shown = sorted.slice(0, limit);
+        status.textContent = q ? `No matching chains found.` : `Filtered patterns: ${fmt(filtered.length)} | showing first ${fmt(shown.length)}.`;
+
+        for (const p of shown) {
+        const selected = AppState.selection.pattern === p.sig;
+        const el = document.createElement("div");
+        el.className = "gallery-item";
+        if (selected) el.classList.add("selected");
+
+        // Get example chain to show thumbnails and time/distance info
+        const exampleChain = Store.chains.byChainId[p.exampleChainId];
+        let thumbnailsHtml = "";
+        let timeDistHtml = "";
+
+        if (exampleChain && exampleChain.length > 0) {
+          // Show thumbnails in sequence
+          thumbnailsHtml = '<div class="flex gap-2 mb-2 flex-wrap items-center">';
+          for (let i = 0; i < exampleChain.length; i++) {
+            const item = exampleChain[i];
+            const thumb = getField(item, ["Thumbnail", "thumbnail_png", "thumbnail"]);
+            const cls = getField(item, ["Class", "class"]) || "?";
+            
+            // Show thumbnail or placeholder
+            if (thumb) {
+              thumbnailsHtml += `<div class="flex flex-col items-center gap-1">
+                <img src="${thumb}" alt="${cls}" class="thumbnail w-16 h-16 border border-slate-700 rounded" style="object-fit: contain;" />
+                <span class="text-[10px] text-slate-500">${cls}</span>
+              </div>`;
+            } else {
+              thumbnailsHtml += `<div class="flex flex-col items-center gap-1">
+                <div class="w-16 h-16 border border-slate-700 rounded bg-slate-800 flex items-center justify-center">
+                  <span class="text-xs text-slate-500">${cls}</span>
+                </div>
+                <span class="text-[10px] text-slate-500">${cls}</span>
+              </div>`;
+            }
+            
+            // Add arrow and time/distance between items (except last)
+            if (i < exampleChain.length - 1) {
+              const nextItem = exampleChain[i + 1];
+              const nextTimeDelta = getField(nextItem, ["Time_Delta", "time_delta", "TimeDelta"]);
+              const nextDistDelta = getField(nextItem, ["Dist_Delta", "dist_delta", "DistDelta"]);
+              
+              // Use the next item's delta (which is the gap from current to next)
+              const dt = isFiniteNumber(nextTimeDelta) ? Number(nextTimeDelta) : null;
+              const dd = isFiniteNumber(nextDistDelta) ? Number(nextDistDelta) : null;
+              
+              thumbnailsHtml += `<div class="flex flex-col items-center justify-center text-[10px] text-slate-500 px-1 min-w-[50px]">
+                <div class="text-slate-500">→</div>
+                ${dt != null ? `<div class="text-slate-500 mono">${dt.toExponential(2)}s</div>` : ''}
+                ${dd != null ? `<div class="text-slate-500 mono">${dd.toFixed(1)}px</div>` : ''}
+              </div>`;
+            }
+          }
+          thumbnailsHtml += '</div>';
+
+          // Summary time/distance info
+          const timeDeltas = [];
+          const distDeltas = [];
+          for (let i = 1; i < exampleChain.length; i++) {
+            const item = exampleChain[i];
+            const dt = getField(item, ["Time_Delta", "time_delta", "TimeDelta"]);
+            const dd = getField(item, ["Dist_Delta", "dist_delta", "DistDelta"]);
+            if (isFiniteNumber(dt)) timeDeltas.push(Number(dt));
+            if (isFiniteNumber(dd)) distDeltas.push(Number(dd));
+          }
+          
+          if (timeDeltas.length > 0 || distDeltas.length > 0) {
+            const avgTime = timeDeltas.length > 0 ? timeDeltas.reduce((a,b) => a+b, 0) / timeDeltas.length : null;
+            const avgDist = distDeltas.length > 0 ? distDeltas.reduce((a,b) => a+b, 0) / distDeltas.length : null;
+            const totalTime = timeDeltas.reduce((a,b) => a+b, 0);
+            const totalDist = distDeltas.reduce((a,b) => a+b, 0);
+            
+            timeDistHtml = '<div class="text-xs text-slate-300 mt-2 space-y-1">';
+            if (avgTime != null) {
+              timeDistHtml += `<div>Avg time gap: <span class="mono text-slate-200">${avgTime.toExponential(2)}s</span></div>`;
+            }
+            if (avgDist != null) {
+              timeDistHtml += `<div>Avg distance: <span class="mono text-slate-200">${avgDist.toFixed(2)}px</span></div>`;
+            }
+            if (timeDeltas.length > 1) {
+              timeDistHtml += `<div>Total time: <span class="mono text-slate-200">${totalTime.toExponential(2)}s</span></div>`;
+            }
+            if (distDeltas.length > 1) {
+              timeDistHtml += `<div>Total distance: <span class="mono text-slate-200">${totalDist.toFixed(2)}px</span></div>`;
+            }
+            timeDistHtml += '</div>';
+          }
+        }
+
+        el.innerHTML = `
+          <div class="text-sm font-semibold mono mb-2">${p.sig}</div>
+          ${thumbnailsHtml}
+        `;
+
+        el.onclick = () => {
+          AppState.selection.pattern = p.sig;
+          AppState.selection.chainId = p.exampleChainId;
+          AppState.selection.clusterId = null;
+          jumpViewerToChain(p.exampleChainId);
+          renderSeqGallery();
+          renderClassGallery();
+          renderViewer();
+        };
+
+        grid.appendChild(el);
+        }
+      }
+    }
+
+    // Sequence gallery controls
+    document.getElementById("seqgal-query").addEventListener("input", (e) => {
+      AppState.filters.seqQuery = e.target.value;
+      renderSeqGallery();
+      renderSeqPlots();
+      renderViewer();
+    });
+    document.getElementById("seqgal-exact").addEventListener("change", (e) => {
+      AppState.filters.seqExact = e.target.checked;
+      renderSeqGallery();
+      renderSeqPlots();
+      renderViewer();
+    });
+    document.getElementById("seqgal-maxdt").addEventListener("input", (e) => {
+      const v = (e.target.value || "").trim();
+      AppState.filters.seqMaxDt = v === "" ? null : Number(v);
+      renderSeqGallery();
+      renderSeqPlots();
+      renderClassGallery();
+      renderClassPlots();
+      renderViewer();
+    });
+    document.getElementById("seqgal-maxdist").addEventListener("input", (e) => {
+      const v = (e.target.value || "").trim();
+      AppState.filters.seqMaxDist = v === "" ? null : Number(v);
+      renderSeqGallery();
+      renderSeqPlots();
+      renderClassGallery();
+      renderClassPlots();
+      renderViewer();
+    });
+    document.getElementById("seqgal-sort").addEventListener("change", (e) => {
+      AppState.filters.seqSortKey = e.target.value;
+      renderSeqGallery();
+    });
+    document.getElementById("seqgal-limit").addEventListener("change", (e) => {
+      AppState.filters.seqLimit = Number(e.target.value);
+      renderSeqGallery();
+    });
+
+    function chainToClusterIds(chain) {
+      // Try common columns for cluster ids in chains.csv rows
+      const ids = [];
+      for (const r of chain) {
+        const cid = getField(r, ["Cluster_ID","cluster_id","cluster","ClusterId","ID"]);
+        if (cid != null) ids.push(String(cid));
+      }
+      return ids;
+    }
+
+    function chainToTimes(chain) {
+      const ts = [];
+      for (const r of chain) {
+        const t = getField(r, ["arrival_time","Arrival_Time","time","t","mean_t"]);
+        if (isFiniteNumber(t)) ts.push(Number(t));
+      }
+      return ts;
+    }
+
+    function jumpViewerToChain(chainId) {
+      if (!Store.chains || !Store.chains.byChainId[chainId] || !Store.events) return;
+      const chain = Store.chains.byChainId[chainId];
+
+      // prefer to use actual event times in chain (if present)
+      let tJump = null;
+      const ts = chainToTimes(chain);
+      if (ts.length) {
+        // normalize chain times to event relative times (unknown offset). If events started at 0, try just subtract min.
+        ts.sort((a,b)=>a-b);
+        const t0 = ts[0];
+        const tMid = ts[Math.floor(ts.length/2)];
+        tJump = tMid - t0; // best-effort
+      } else {
+        // fallback: if chain has cluster ids and events has cluster->time mapping, use median of those events
+        const cids = chainToClusterIds(chain);
+        for (const cid of cids) {
+          const idxs = Store.indices.clusterToEventIdx?.get(String(cid));
+          if (idxs && idxs.length) {
+            const t = Store.events.t[idxs[0]];
+            tJump = t;
+            break;
+          }
+        }
+      }
+      if (tJump != null) setViewerTime(tJump);
+    }
+
+    // =====================================================================================
+    // Viewer: apply filters + selection
+    // =====================================================================================
+    function getAllowedClusterIdsFromClassificationFilter() {
+      if (!Store.classification) return null;
+      const filtered = getClassificationFilteredRows();
+      const ids = filtered.map(inferClusterId).filter(v => v != null);
+      return new Set(ids.map(String));
+    }
+
+    function getAllowedClusterIdsFromSequenceFilter() {
+      if (!Store.chains) return null;
+      const filteredChains = getSequenceFilteredChains();
+      if (filteredChains === null) return null; // no active seq filter/constraints
+      if (!filteredChains.length) return new Set(); // filter yields none
+      const allowedCluster = new Set();
+      for (const ch of filteredChains) {
+        const cids = chainToClusterIds(ch.chain);
+        for (const cid of cids) if (cid != null) allowedCluster.add(String(cid));
+      }
+      return allowedCluster;
+    }
+
+    function computeViewerMask() {
+      const ev = Store.events;
+      if (!ev) return null;
+
+      // If we cannot link by cluster id, we can still filter by time window, but not by these filters.
+      const canFilterByCluster = ev.clusterId && ev.clusterId.some(v => v != null);
+
+      const clsAllowed = canFilterByCluster ? getAllowedClusterIdsFromClassificationFilter() : null;
+      const seqAllowed = canFilterByCluster ? getAllowedClusterIdsFromSequenceFilter() : null;
+
+      return { canFilterByCluster, clsAllowed, seqAllowed };
+    }
+
+    function computeWindowData() {
+      const ev = Store.events;
+      if (!ev) return null;
+
+      const tMax = ev.t.length ? ev.t[ev.t.length - 1] : 0;
+      const centerFrac = AppState.viewer.timeSec / Math.max(1, tMax);
+      const center = AppState.viewer.timeSec;
+      const win = AppState.viewer.windowSec;
+      const view = AppState.viewer.view || "animated";
+      const mode = AppState.viewer.mode;
+      const speed = AppState.viewer.speed;
+
+      if (view === "max") {
+        document.getElementById("viewer-tCenterLabel").textContent = "MAX";
+        document.getElementById("viewer-winLabel").textContent = "FULL";
+      } else {
+        document.getElementById("viewer-tCenterLabel").textContent = fmtSci(center);
+        document.getElementById("viewer-winLabel").textContent = fmtSci(win);
+      }
+      document.getElementById("viewer-speedLabel").textContent = `${speed.toFixed(2)}×`;
+
+      // Update slider if needed (but not if user is actively dragging it)
+      const tCenterSlider = document.getElementById("viewer-tCenter");
+      if (tMax > 0 && view !== "max") {
+        tCenterSlider.max = "1";
+        // Only update slider value if user is not actively dragging it
+        if (!AppState.viewer.isDraggingTimeSlider) {
+          tCenterSlider.value = String(Math.max(0, Math.min(1, centerFrac)));
+        }
+      }
+
+      const lo = (view === "max") ? 0 : (center - win / 2);
+      const hi = (view === "max") ? tMax : (center + win / 2);
+
+      const { canFilterByCluster, clsAllowed, seqAllowed } = computeViewerMask();
+      const needsClusterIds = (mode === "classification") || (AppState.selection.clusterId != null);
+      const classMap = needsClusterIds ? (Store.indices.classMap || buildClassMap()) : null;
+      const selCluster = AppState.selection.clusterId != null ? String(AppState.selection.clusterId) : null;
+
+      // Pre-allocate arrays with estimated size for better performance
+      const MAX_POINTS = (view === "max") ? 120000 : 60000;
+      const x = new Array(MAX_POINTS);
+      const y = new Array(MAX_POINTS);
+      const cidVis = new Array(MAX_POINTS);
+      const alpha = new Array(MAX_POINTS);
+      const energyVals = new Array(MAX_POINTS);
+      const timeVals = new Array(MAX_POINTS);
+      let count = 0;
+      let selMinX = Infinity, selMaxX = -Infinity, selMinY = Infinity, selMaxY = -Infinity;
+      let selCountInWindow = 0;
+
+      // Only scan the visible time range (ev.t is sorted)
+      const i0 = lowerBound(ev.t, lo);
+      const i1 = upperBound(ev.t, hi);
+
+      // Only consider filtering active if there's an actual filter applied (not "ALL" for classification)
+      const hasClassificationFilter = AppState.filters.radiation !== "ALL";
+      const hasSequenceFilter = (AppState.filters.seqQuery && AppState.filters.seqQuery.trim()) || 
+                                (AppState.filters.seqMaxDt != null) || 
+                                (AppState.filters.seqMaxDist != null);
+      const filterActive =
+        (canFilterByCluster && (
+          (hasClassificationFilter && clsAllowed && clsAllowed.size) ||
+          (hasSequenceFilter && seqAllowed !== null)
+        ));
+
+      let stride = 1;
+
+      if (view === "max" || filterActive) {
+        // Filter-aware path: collect passing indices, then downsample that set if needed.
+        const passIdx = [];
+        passIdx.length = 0; // Reuse array
+        for (let i = i0; i < i1; i++) {
+          const ti = ev.t[i];
+
+          if (canFilterByCluster) {
+            const cid = ev.clusterId[i];
+            if (clsAllowed && clsAllowed.size && cid != null && !clsAllowed.has(String(cid))) continue;
+            if (seqAllowed && seqAllowed.size && cid != null && !seqAllowed.has(String(cid))) continue;
+            if (seqAllowed && seqAllowed.size === 0) continue;
+          }
+
+          const a = (view === "animated") ? alphaFade(ti, center, win) : 1.0;
+          if (a <= 0) continue;
+
+          passIdx.push(i);
+        }
+
+        if (passIdx.length > MAX_POINTS) {
+          stride = Math.ceil(passIdx.length / MAX_POINTS);
+        }
+
+        for (let k = 0; k < passIdx.length; k += stride) {
+          if (count >= MAX_POINTS) break;
+          const i = passIdx[k];
+          const ti = ev.t[i];
+          const a = (view === "animated") ? alphaFade(ti, center, win) : 1.0;
+
+          x[count] = ev.x[i];
+          y[count] = ev.y[i];
+          alpha[count] = a;
+          timeVals[count] = ti;
+
+          // Only convert clusterId to string if needed for classification mode or selection
+          if (needsClusterIds && ev.clusterId) {
+            const cid = ev.clusterId[i];
+            cidVis[count] = cid != null ? String(cid) : null;
+            // Check selection (only if we have a selection)
+            if (selCluster && cid != null && String(cid) === selCluster) {
+              const xi = ev.x[i], yi = ev.y[i];
+              if (xi < selMinX) selMinX = xi;
+              if (xi > selMaxX) selMaxX = xi;
+              if (yi < selMinY) selMinY = yi;
+              if (yi > selMaxY) selMaxY = yi;
+              selCountInWindow += 1;
+            }
+          } else {
+            cidVis[count] = null;
+          }
+          if (ev.tot) energyVals[count] = ev.tot[i] || 0;
+          count++;
+        }
+      } else {
+        // Fast path (no filters): stride by time-window size
+        stride = Math.max(1, Math.ceil((i1 - i0) / MAX_POINTS));
+        for (let i = i0; i < i1; i += stride) {
+          if (count >= MAX_POINTS) break;
+          const ti = ev.t[i];
+          const a = alphaFade(ti, center, win);
+          if (a <= 0) continue;
+
+          x[count] = ev.x[i];
+          y[count] = ev.y[i];
+          alpha[count] = a;
+          timeVals[count] = ti;
+
+          // Only convert clusterId to string if needed for classification mode or selection
+          if (needsClusterIds && ev.clusterId) {
+            const cid = ev.clusterId[i];
+            cidVis[count] = cid != null ? String(cid) : null;
+            // Check selection (only if we have a selection)
+            if (selCluster && cid != null && String(cid) === selCluster) {
+              const xi = ev.x[i], yi = ev.y[i];
+              if (xi < selMinX) selMinX = xi;
+              if (xi > selMaxX) selMaxX = xi;
+              if (yi < selMinY) selMinY = yi;
+              if (yi > selMaxY) selMaxY = yi;
+              selCountInWindow += 1;
+            }
+          } else {
+            cidVis[count] = null;
+          }
+          if (ev.tot) energyVals[count] = ev.tot[i] || 0;
+          count++;
+        }
+      }
+
+      // Trim arrays to actual size
+      x.length = count;
+      y.length = count;
+      cidVis.length = count;
+      alpha.length = count;
+      energyVals.length = count;
+      timeVals.length = count;
+
+      let colors = [];
+      let windowDensityMax = null;
+
+      // For max projection, aggregate by pixel and take maximum value
+      if (view === "max") {
+        const pixelMap = new Map(); // key: numeric (y*264+x) -> {maxValue, maxIdx, ...}
+        
+        if (mode === "energy" && ev.tot) {
+          // Max projection: take maximum energy at each pixel
+          for (let i = 0; i < count; i++) {
+            const key = pixelKey(x[i], y[i]);
+            const energy = energyVals[i] || 0;
+            const existing = pixelMap.get(key);
+            if (!existing || energy > existing.maxValue) {
+              pixelMap.set(key, { maxValue: energy, maxIdx: i });
+            }
+          }
+          
+          // Normalize energy values
+          let minE = Infinity, maxE = -Infinity;
+          for (const p of pixelMap.values()) {
+            const e = p.maxValue;
+            if (e < minE) minE = e;
+            if (e > maxE) maxE = e;
+          }
+          if (minE === Infinity) { minE = 0; maxE = 1; }
+          const invSpan = maxE > minE ? 1 / (maxE - minE) : 0;
+          
+          const aggCount = pixelMap.size;
+          const xAgg = new Array(aggCount);
+          const yAgg = new Array(aggCount);
+          const alphaAgg = new Array(aggCount);
+          colors = new Array(aggCount);
+          let aggIdx = 0;
+          
+          pixelMap.forEach((p, key) => {
+          const [xx, yy] = pixelKeyToXY(key);
+          const v = clamp01((p.maxValue - minE) * invSpan);
+          const [r,g,b] = turboRgb255(v);
+          xAgg[aggIdx] = xx;
+          yAgg[aggIdx] = yy;
+          alphaAgg[aggIdx] = 1.0;
+          colors[aggIdx] = [r/255, g/255, b/255, 1.0];
+          aggIdx++;
+          });
+          
+          x.length = aggCount; y.length = aggCount; alpha.length = aggCount;
+          for (let i = 0; i < aggCount; i++) {
+            x[i] = xAgg[i];
+            y[i] = yAgg[i];
+            alpha[i] = alphaAgg[i];
+          }
+        } else if (mode === "time") {
+          // Max projection: take maximum (latest) time at each pixel
+          const timeLo = 0;
+          const timeHi = tMax;
+          const span = Math.max(1e-12, (timeHi - timeLo));
+          const invSpan = 1 / span;
+          
+          for (let i = 0; i < count; i++) {
+            const key = pixelKey(x[i], y[i]);
+            const time = timeVals[i];
+            const existing = pixelMap.get(key);
+            if (!existing || time > existing.maxValue) {
+              pixelMap.set(key, { maxValue: time, maxIdx: i });
+            }
+          }
+          
+          const aggCount = pixelMap.size;
+          const xAgg = new Array(aggCount);
+          const yAgg = new Array(aggCount);
+          const alphaAgg = new Array(aggCount);
+          colors = new Array(aggCount);
+          let aggIdx = 0;
+          
+          pixelMap.forEach((p, key) => {
+            const [xx, yy] = pixelKeyToXY(key);
+            const v = clamp01((p.maxValue - timeLo) * invSpan);
+            const [r,g,b] = turboRgb255(v);
+            xAgg[aggIdx] = xx;
+            yAgg[aggIdx] = yy;
+            alphaAgg[aggIdx] = 1.0;
+            colors[aggIdx] = [r/255, g/255, b/255, 1.0];
+            aggIdx++;
+          });
+          
+          x.length = aggCount; y.length = aggCount; alpha.length = aggCount;
+          for (let i = 0; i < aggCount; i++) {
+            x[i] = xAgg[i];
+            y[i] = yAgg[i];
+            alpha[i] = alphaAgg[i];
+          }
+        } else if (mode === "classification") {
+          // Max projection: for classification, take the class with highest energy (or most recent if no energy)
+          for (let i = 0; i < count; i++) {
+            const key = pixelKey(x[i], y[i]);
+            const energy = (ev.tot && ev.tot[i]) ? ev.tot[i] : 0;
+            const time = timeVals[i];
+            const existing = pixelMap.get(key);
+            
+            if (!existing || energy > existing.maxValue || (energy === existing.maxValue && time > existing.maxTime)) {
+              pixelMap.set(key, { maxValue: energy, maxTime: time, maxIdx: i });
+            }
+          }
+          
+          const aggCount = pixelMap.size;
+          const xAgg = new Array(aggCount);
+          const yAgg = new Array(aggCount);
+          const alphaAgg = new Array(aggCount);
+          colors = new Array(aggCount);
+          let aggIdx = 0;
+          
+          pixelMap.forEach((p, key) => {
+            const [xx, yy] = pixelKeyToXY(key);
+            const idx = p.maxIdx;
+            const a = 1.0;
+            let r, g, b;
+            if (ev.clusterId && classMap && cidVis[idx]) {
+              const cls = classMap.get(cidVis[idx]) || "Other";
+              [r,g,b] = CLASS_RGB[cls] || CLASS_RGB.Other;
+            } else if (ev.clusterId && cidVis[idx]) {
+              const id = parseInt(cidVis[idx]);
+              r = (id * 53423423) % 256;
+              g = (id * 94235252) % 256;
+              b = (id * 19283741) % 256;
+            } else {
+              r = 25; g = 200; b = 230;
+            }
+            xAgg[aggIdx] = xx;
+            yAgg[aggIdx] = yy;
+            alphaAgg[aggIdx] = a;
+            colors[aggIdx] = [r/255, g/255, b/255, 1.0];
+            aggIdx++;
+          });
+          
+          x.length = aggCount; y.length = aggCount; alpha.length = aggCount;
+          for (let i = 0; i < aggCount; i++) {
+            x[i] = xAgg[i];
+            y[i] = yAgg[i];
+            alpha[i] = alphaAgg[i];
+          }
+        } else {
+          // Fallback: just aggregate by pixel (take first occurrence)
+          const pixelSet = new Set();
+          const xAgg = [], yAgg = [], alphaAgg = [];
+          for (let i = 0; i < count; i++) {
+            const key = pixelKey(x[i], y[i]);
+            if (!pixelSet.has(key)) {
+              pixelSet.add(key);
+              xAgg.push(x[i]);
+              yAgg.push(y[i]);
+              alphaAgg.push(1.0);
+              colors.push([25/255, 200/255, 230/255, 1.0]);
+            }
+          }
+          const aggCount = xAgg.length;
+          x.length = aggCount; y.length = aggCount; alpha.length = aggCount;
+          for (let i = 0; i < aggCount; i++) {
+            x[i] = xAgg[i];
+            y[i] = yAgg[i];
+            alpha[i] = alphaAgg[i];
+          }
+        }
+      } else if (mode === "time") {
+        // For animated view, use current window (lo to hi)
+        const timeLo = lo;
+        const timeHi = hi;
+        const span = Math.max(1e-12, (timeHi - timeLo));
+        const invSpan = 1 / span;
+        colors = new Array(count);
+        for (let i = 0; i < count; i++) {
+          const v = clamp01((timeVals[i] - timeLo) * invSpan);
+          const [r,g,b] = turboRgb255(v);
+          const a = alpha[i];
+          colors[i] = [r/255, g/255, b/255, a];
+        }
+      } else if (mode === "energy" && ev.tot) {
+        // Normalize energy values for this window
+        let minE = Infinity, maxE = -Infinity;
+        for (let i = 0; i < count; i++) {
+          if (alpha[i] > 0) {
+            const v = energyVals[i];
+            if (v < minE) minE = v;
+            if (v > maxE) maxE = v;
+          }
+        }
+        if (minE === Infinity) { minE = 0; maxE = 1; }
+        const invSpan = maxE > minE ? 1 / (maxE - minE) : 0;
+        colors = new Array(count);
+        for (let i = 0; i < count; i++) {
+          const v = clamp01((energyVals[i] - minE) * invSpan);
+          const [r,g,b] = turboRgb255(v);
+          const a = alpha[i];
+          colors[i] = [r/255, g/255, b/255, a];
+        }
+      } else if (mode === "density") {
+        // Aggregate counts per (x,y) pixel
+        const counts = new Map();
+        for (let i = 0; i < count; i++) {
+          const key = pixelKey(x[i], y[i]);
+          counts.set(key, (counts.get(key) || 0) + 1);
+        }
+
+        const countValues = Array.from(counts.values());
+        const maxCountWindow = countValues.length > 0 ? percentile(countValues, 0.95) : 1;
+        const globalMax = ev.densityGlobalMax || 1;
+        const normMax = Math.max(1, Math.min(globalMax, maxCountWindow || 1));
+        const invNormMax = 1 / normMax;
+
+        const aggCount = counts.size;
+        const xAgg = new Array(aggCount);
+        const yAgg = new Array(aggCount);
+        const alphaAgg = new Array(aggCount);
+        colors = new Array(aggCount);
+        let aggIdx = 0;
+
+        counts.forEach((cnt, key) => {
+          const [xx, yy] = pixelKeyToXY(key);
+          const v = clamp01(cnt * invNormMax);
+          const [r,g,b] = turboRgb255(v);
+          xAgg[aggIdx] = xx;
+          yAgg[aggIdx] = yy;
+          alphaAgg[aggIdx] = 1.0;
+          colors[aggIdx] = `rgba(${r},${g},${b},1)`;
+          aggIdx++;
+        });
+
+        x.length = aggCount; y.length = aggCount; alpha.length = aggCount;
+        for (let i = 0; i < aggCount; i++) {
+          x[i] = xAgg[i];
+          y[i] = yAgg[i];
+          alpha[i] = alphaAgg[i];
+        }
+
+        windowDensityMax = maxCountWindow || 1;
+      } else {
+        // classification or single-color fallback
+        colors = new Array(count);
+        for (let i = 0; i < count; i++) {
+          const a = alpha[i];
+          let r, g, b;
+          if (ev.clusterId && classMap && cidVis[i]) {
+            const cls = classMap.get(cidVis[i]) || "Other";
+            [r,g,b] = CLASS_RGB[cls] || CLASS_RGB.Other;
+          } else if (ev.clusterId && cidVis[i]) {
+            const id = parseInt(cidVis[i]);
+            r = (id * 53423423) % 256;
+            g = (id * 94235252) % 256;
+            b = (id * 19283741) % 256;
+          } else {
+            r = 25; g = 200; b = 230;
+          }
+          colors[i] = [r/255, g/255, b/255, a];
+        }
+      }
+
+      const tMaxVal = ev.t.length ? ev.t[ev.t.length - 1] : 0;
+      return {
+        x, y, colors,
+        nPoints: count,
+        nClusters: ev.clusterId ? new Set(cidVis.filter(v => v != null)).size : 0,
+        tStart: (view === "max") ? 0 : (center - win/2),
+        tEnd: (view === "max") ? tMaxVal : (center + win/2),
+        tMax: tMaxVal,
+        mode,
+        view,
+        speed,
+        windowDensityMax,
+        stride,
+        selBounds: (selCountInWindow > 0) ? { minX: selMinX, maxX: selMaxX, minY: selMinY, maxY: selMaxY } : null
+      };
+    }
+
+    // =====================================================================================
+    // Custom WebGL Renderer (much faster than Plotly for large point sets)
+    // =====================================================================================
+    class WebGLPointRenderer {
+      constructor(canvasId) {
+        this.canvas = document.getElementById(canvasId);
+        if (!this.canvas) return;
+        
+        this.gl = this.canvas.getContext("webgl") || this.canvas.getContext("experimental-webgl");
+        if (!this.gl) {
+          console.warn("WebGL not supported, falling back to Plotly");
+          this.canvas = null;
+          return;
+        }
+
+        this.program = null;
+        this.buffer = null;
+        this.colorBuffer = null;
+        this.pointCount = 0;
+        
+        // Cache attribute/uniform locations for performance
+        this.attribLocations = {};
+        this.uniformLocations = {};
+        
+        this.initShaders();
+        this.initBuffers();
+        this.setupCanvas();
+      }
+
+      setupCanvas() {
+        const updateSize = () => {
+          const rect = this.canvas.getBoundingClientRect();
+          const dpr = window.devicePixelRatio || 1;
+          this.canvas.width = rect.width * dpr;
+          this.canvas.height = rect.height * dpr;
+          this.gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+        };
+        updateSize();
+        window.addEventListener("resize", updateSize);
+      }
+
+      initShaders() {
+        const vsSource = `
+          attribute vec2 a_position;
+          attribute vec4 a_color;
+          uniform vec2 u_resolution;
+          varying vec4 v_color;
+          
+          void main() {
+            vec2 clipSpace = ((a_position / u_resolution) * 2.0) - 1.0;
+            gl_Position = vec4(clipSpace * vec2(1, -1), 0, 1);
+            gl_PointSize = 3.0;
+            v_color = a_color;
+          }
+        `;
+
+        const fsSource = `
+          precision mediump float;
+          varying vec4 v_color;
+          
+          void main() {
+            gl_FragColor = v_color;
+          }
+        `;
+
+        const vertexShader = this.createShader(this.gl.VERTEX_SHADER, vsSource);
+        const fragmentShader = this.createShader(this.gl.FRAGMENT_SHADER, fsSource);
+        this.program = this.createProgram(vertexShader, fragmentShader);
+      }
+
+      createShader(type, source) {
+        const shader = this.gl.createShader(type);
+        this.gl.shaderSource(shader, source);
+        this.gl.compileShader(shader);
+        if (!this.gl.getShaderParameter(shader, this.gl.COMPILE_STATUS)) {
+          console.error("Shader compile error:", this.gl.getShaderInfoLog(shader));
+          this.gl.deleteShader(shader);
+          return null;
+        }
+        return shader;
+      }
+
+      createProgram(vertexShader, fragmentShader) {
+        const program = this.gl.createProgram();
+        this.gl.attachShader(program, vertexShader);
+        this.gl.attachShader(program, fragmentShader);
+        this.gl.linkProgram(program);
+        if (!this.gl.getProgramParameter(program, this.gl.LINK_STATUS)) {
+          console.error("Program link error:", this.gl.getProgramInfoLog(program));
+          return null;
+        }
+        return program;
+      }
+
+      initBuffers() {
+        this.buffer = this.gl.createBuffer();
+        this.colorBuffer = this.gl.createBuffer();
+      }
+
+      render(x, y, colors) {
+        if (!this.gl || !this.program || x.length === 0) return;
+
+        const pointCount = x.length;
+        this.pointCount = pointCount;
+
+        // Use interleaved buffer for better cache performance (if colors are arrays)
+        // Otherwise prepare separate arrays
+        const positions = new Float32Array(pointCount * 2);
+        const colorData = new Float32Array(pointCount * 4);
+        
+        // Fast path: colors are already arrays [r,g,b,a]
+        if (colors.length > 0 && Array.isArray(colors[0]) && !isNaN(colors[0][0])) {
+          for (let i = 0; i < pointCount; i++) {
+            positions[i * 2] = x[i];
+            positions[i * 2 + 1] = y[i];
+            const rgba = colors[i] || [0.1, 0.78, 0.9, 1.0];
+            colorData[i * 4] = rgba[0];
+            colorData[i * 4 + 1] = rgba[1];
+            colorData[i * 4 + 2] = rgba[2];
+            colorData[i * 4 + 3] = rgba[3];
+          }
+        } else {
+          // Fallback: parse string colors (slower)
+          for (let i = 0; i < pointCount; i++) {
+            positions[i * 2] = x[i];
+            positions[i * 2 + 1] = y[i];
+            const rgba = this.parseColor(colors[i] || "rgba(25,200,230,1)");
+            colorData[i * 4] = rgba[0];
+            colorData[i * 4 + 1] = rgba[1];
+            colorData[i * 4 + 2] = rgba[2];
+            colorData[i * 4 + 3] = rgba[3];
+          }
+        }
+
+        // Upload to GPU (use cached locations)
+        this.gl.useProgram(this.program);
+
+        // Positions
+        this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.buffer);
+        this.gl.bufferData(this.gl.ARRAY_BUFFER, positions, this.gl.DYNAMIC_DRAW);
+        if (!this.attribLocations.position) {
+          this.attribLocations.position = this.gl.getAttribLocation(this.program, "a_position");
+          this.uniformLocations.resolution = this.gl.getUniformLocation(this.program, "u_resolution");
+        }
+        this.gl.enableVertexAttribArray(this.attribLocations.position);
+        this.gl.vertexAttribPointer(this.attribLocations.position, 2, this.gl.FLOAT, false, 0, 0);
+
+        // Colors
+        this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.colorBuffer);
+        this.gl.bufferData(this.gl.ARRAY_BUFFER, colorData, this.gl.DYNAMIC_DRAW);
+        if (!this.attribLocations.color) {
+          this.attribLocations.color = this.gl.getAttribLocation(this.program, "a_color");
+        }
+        this.gl.enableVertexAttribArray(this.attribLocations.color);
+        this.gl.vertexAttribPointer(this.attribLocations.color, 4, this.gl.FLOAT, false, 0, 0);
+
+        // Resolution uniform (cached)
+        this.gl.uniform2f(this.uniformLocations.resolution, 264, 264);
+
+        // Clear and draw
+        this.gl.clearColor(0, 0, 0, 1);
+        this.gl.clear(this.gl.COLOR_BUFFER_BIT);
+        this.gl.enable(this.gl.BLEND);
+        this.gl.blendFunc(this.gl.SRC_ALPHA, this.gl.ONE_MINUS_SRC_ALPHA);
+        this.gl.drawArrays(this.gl.POINTS, 0, pointCount);
+      }
+
+      parseColor(colorStr) {
+        // Parse rgba(r,g,b,a) string (fallback only)
+        const match = colorStr.match(/rgba?\((\d+),(\d+),(\d+)(?:,([\d.]+))?\)/);
+        if (match) {
+          return [
+            parseInt(match[1]) / 255,
+            parseInt(match[2]) / 255,
+            parseInt(match[3]) / 255,
+            match[4] ? parseFloat(match[4]) : 1.0
+          ];
+        }
+        return [1, 1, 1, 1];
+      }
+
+      renderSelection(bounds) {
+        if (!this.gl || !bounds) return;
+        
+        // Draw selection rectangle using 2D canvas overlay
+        let overlay = document.getElementById("events-plot-overlay");
+        if (!overlay) {
+          const container = this.canvas.parentElement;
+          container.style.position = "relative";
+          overlay = document.createElement("canvas");
+          overlay.id = "events-plot-overlay";
+          overlay.style.position = "absolute";
+          overlay.style.top = "0";
+          overlay.style.left = "0";
+          overlay.style.pointerEvents = "none";
+          overlay.style.width = "100%";
+          overlay.style.height = "100%";
+          container.appendChild(overlay);
+        }
+        const ctx = overlay.getContext("2d");
+        const rect = this.canvas.getBoundingClientRect();
+        const dpr = window.devicePixelRatio || 1;
+        overlay.width = rect.width * dpr;
+        overlay.height = rect.height * dpr;
+        ctx.scale(dpr, dpr);
+        const scale = rect.width / 264;
+        
+        ctx.clearRect(0, 0, rect.width, rect.height);
+        ctx.strokeStyle = "rgba(251,191,36,0.95)";
+        ctx.fillStyle = "rgba(251,191,36,0.15)";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.rect(
+          bounds.minX * scale,
+          bounds.minY * scale,
+          (bounds.maxX - bounds.minX) * scale,
+          (bounds.maxY - bounds.minY) * scale
+        );
+        ctx.fill();
+        ctx.stroke();
+      }
+
+      clearSelection() {
+        const overlay = document.getElementById("events-plot-overlay");
+        if (overlay) {
+          const ctx = overlay.getContext("2d");
+          const rect = this.canvas.getBoundingClientRect();
+          const dpr = window.devicePixelRatio || 1;
+          ctx.clearRect(0, 0, rect.width * dpr, rect.height * dpr);
+        }
+      }
+    }
+
+    // Initialize WebGL renderer
+    let webglRenderer = null;
+
+    function initWebGLRenderer() {
+      if (!webglRenderer) {
+        webglRenderer = new WebGLPointRenderer("events-plot-canvas");
+        if (!webglRenderer.canvas) {
+          // Fallback to Plotly if WebGL not available
+          document.getElementById("events-plot").style.display = "block";
+          document.getElementById("events-plot-canvas").style.display = "none";
+        }
+      }
+      return webglRenderer;
+    }
+
+    // Helper functions
+    function unionBounds(boundsList) {
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (const b0 of boundsList) {
+        if (!b0) continue;
+        if (b0.minX < minX) minX = b0.minX;
+        if (b0.minY < minY) minY = b0.minY;
+        if (b0.maxX > maxX) maxX = b0.maxX;
+        if (b0.maxY > maxY) maxY = b0.maxY;
+      }
+      if (!Number.isFinite(minX) || !Number.isFinite(minY) || !Number.isFinite(maxX) || !Number.isFinite(maxY)) return null;
+      return { minX, minY, maxX, maxY };
+    }
+
+    function updateViewerLegend(d, ev) {
+      const legendEl = document.getElementById("viewer-legend");
+      let legendHtml = "";
+      if (d.mode === "classification") {
+        legendHtml = `
+          <div class="flex items-center gap-2 mb-1">
+            <span class="inline-block w-3 h-3 rounded-sm" style="background: rgba(220,20,20,1)"></span><span>Alpha</span>
+          </div>
+          <div class="flex items-center gap-2 mb-1">
+            <span class="inline-block w-3 h-3 rounded-sm" style="background: rgba(20,180,220,1)"></span><span>Beta</span>
+          </div>
+          <div class="flex items-center gap-2 mb-1">
+            <span class="inline-block w-3 h-3 rounded-sm" style="background: rgba(20,220,20,1)"></span><span>Gamma</span>
+          </div>
+          <div class="flex items-center gap-2 mb-1">
+            <span class="inline-block w-3 h-3 rounded-sm" style="background: rgba(150,150,150,1)"></span><span>Other</span>
+          </div>
+        `;
+      } else if (d.mode === "energy") {
+        const emin = (ev && isFinite(ev.energyMin)) ? ev.energyMin : 0;
+        const emax = (ev && isFinite(ev.energyMax)) ? ev.energyMax : 1;
+        const e0 = emin;
+        const e25 = emin + 0.25*(emax - emin);
+        const e50 = emin + 0.50*(emax - emin);
+        const e75 = emin + 0.75*(emax - emin);
+        const e1 = emax;
+        legendHtml = `
+          <div class="mb-1">Energy (ToT)</div>
+          <div class="w-full h-3 rounded overflow-hidden mb-1" style="background: linear-gradient(to right,
+            rgb(${turboRgb255(0).join(",")}),
+            rgb(${turboRgb255(0.25).join(",")}),
+            rgb(${turboRgb255(0.5).join(",")}),
+            rgb(${turboRgb255(0.75).join(",")}),
+            rgb(${turboRgb255(1).join(",")})
+          )"></div>
+          <div class="flex justify-between mono">
+            <span>${e0.toFixed(2)}</span>
+            <span>${e25.toFixed(2)}</span>
+            <span>${e50.toFixed(2)}</span>
+            <span>${e75.toFixed(2)}</span>
+            <span>${e1.toFixed(2)}</span>
+          </div>
+        `;
+      } else if (d.mode === "density") {
+        const globalMax = (ev && ev.densityGlobalMax) ? ev.densityGlobalMax : 1;
+        const windowMax = d.windowDensityMax || globalMax;
+        const maxC = Math.max(1, Math.min(globalMax, windowMax));
+        const c0 = 1;
+        const cMid = Math.max(1, Math.round(maxC / 2));
+        legendHtml = `
+          <div class="mb-1">Density (events / pixel)</div>
+          <div class="w-full h-3 rounded overflow-hidden mb-1" style="background: linear-gradient(to right,
+            rgb(${turboRgb255(0).join(",")}),
+            rgb(${turboRgb255(0.25).join(",")}),
+            rgb(${turboRgb255(0.5).join(",")}),
+            rgb(${turboRgb255(0.75).join(",")}),
+            rgb(${turboRgb255(1).join(",")})
+          )"></div>
+          <div class="flex justify-between mono">
+            <span>${c0}</span><span>${cMid}</span><span>${maxC}</span>
+          </div>
+        `;
+      } else if (d.mode === "time") {
+        const timeLabel = (d.view === "max") ? "Time (full range)" : "Time (within window)";
+        legendHtml = `
+          <div class="mb-1">${timeLabel}</div>
+          <div class="w-full h-3 rounded overflow-hidden mb-1" style="background: linear-gradient(to right,
+            rgb(${turboRgb255(0).join(",")}),
+            rgb(${turboRgb255(0.25).join(",")}),
+            rgb(${turboRgb255(0.5).join(",")}),
+            rgb(${turboRgb255(0.75).join(",")}),
+            rgb(${turboRgb255(1).join(",")})
+          )"></div>
+          <div class="flex justify-between mono">
+            <span>${fmtSci(d.tStart)}</span><span>${fmtSci(d.tEnd)}</span>
+          </div>
+        `;
+      }
+      legendEl.innerHTML = legendHtml;
+    }
+
+    // Track if plot is initialized for using restyle vs react
+    let _plotInitialized = false;
+    let _lastLayoutHash = "";
+    let _lastSelectionHash = "";
+
+    function renderViewer() {
+      const ev = Store.events;
+      if (!ev) {
+        document.getElementById("viewer-stats").textContent = "";
+        document.getElementById("viewer-legend").innerHTML = "";
+        const renderer = initWebGLRenderer();
+        if (renderer && renderer.canvas) {
+          renderer.clearSelection();
+        } else {
+          Plotly.react("events-plot", [], {}, {});
+        }
+        _plotInitialized = false;
+        return;
+      }
+
+      const { canFilterByCluster } = computeViewerMask();
+
+      const d = computeWindowData();
+      if (!d) return;
+
+      // Try WebGL renderer first (much faster)
+      const renderer = initWebGLRenderer();
+      if (renderer && renderer.canvas) {
+        // Use WebGL renderer
+        renderer.render(d.x, d.y, d.colors);
+        
+        // Handle selection
+        const selCluster = AppState.selection.clusterId != null ? String(AppState.selection.clusterId) : null;
+        const selChainId = AppState.selection.chainId != null ? String(AppState.selection.chainId) : null;
+        
+        let b = null;
+        if (selCluster) {
+          b = Store.indices.clusterBounds?.get(selCluster) || d.selBounds;
+        } else if (selChainId && Store.chains?.byChainId?.[selChainId] && Store.indices.clusterBounds) {
+          const chain = Store.chains.byChainId[selChainId];
+          const cids = chainToClusterIds(chain);
+          const bs = [];
+          for (const cid of cids) {
+            const bb = Store.indices.clusterBounds.get(String(cid));
+            if (bb) bs.push(bb);
+          }
+          b = unionBounds(bs);
+        }
+        
+        if (b) {
+          const SELECTION_PAD = 5;
+          const bp = {
+            minX: Math.max(0, b.minX - SELECTION_PAD),
+            maxX: Math.min(264, b.maxX + SELECTION_PAD),
+            minY: Math.max(0, b.minY - SELECTION_PAD),
+            maxY: Math.min(264, b.maxY + SELECTION_PAD),
+          };
+          renderer.renderSelection(bp);
+        } else {
+          renderer.clearSelection();
+        }
+        
+        const stats = (d.stride && d.stride > 1) ? `Downsample: 1/${d.stride}` : "";
+        document.getElementById("viewer-stats").textContent = stats;
+        updateViewerLegend(d, ev);
+        return;
+      }
+
+      // Fallback to Plotly if WebGL not available
+      // Create layout hash to detect config changes
+      const layoutHash = `${AppState.viewer.view}|${AppState.viewer.mode}`;
+      const layoutChanged = layoutHash !== _lastLayoutHash;
+      _lastLayoutHash = layoutHash;
+
+      // Convert colors to strings for Plotly (if they're arrays)
+      const plotlyColors = d.colors.map(c => {
+        if (Array.isArray(c)) {
+          return `rgba(${Math.round(c[0]*255)},${Math.round(c[1]*255)},${Math.round(c[2]*255)},${c[3]})`;
+        }
+        return c;
+      });
+      
+      const traces = [{
+        x: d.x,
+        y: d.y,
+        mode: "markers",
+        type: "scattergl",
+        marker: {
+          size: 3,
+          color: plotlyColors
+        },
+        hoverinfo: "skip",
+        name: "events"
+      }];
+
+      // Selection rectangle: use precomputed full-cluster bounds when available (fast + always visible),
+      // otherwise fall back to bounds from the current window.
+      const selCluster = AppState.selection.clusterId != null ? String(AppState.selection.clusterId) : null;
+      const selChainId = AppState.selection.chainId != null ? String(AppState.selection.chainId) : null;
+
+      const SELECTION_PAD = 5; // px padding around ROI rectangle
+      function padBounds(b0) {
+        return {
+          minX: Math.max(0, b0.minX - SELECTION_PAD),
+          maxX: Math.min(264, b0.maxX + SELECTION_PAD),
+          minY: Math.max(0, b0.minY - SELECTION_PAD),
+          maxY: Math.min(264, b0.maxY + SELECTION_PAD),
+        };
+      }
+
+      function unionBounds(boundsList) {
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (const b0 of boundsList) {
+          if (!b0) continue;
+          if (b0.minX < minX) minX = b0.minX;
+          if (b0.minY < minY) minY = b0.minY;
+          if (b0.maxX > maxX) maxX = b0.maxX;
+          if (b0.maxY > maxY) maxY = b0.maxY;
+        }
+        if (!Number.isFinite(minX) || !Number.isFinite(minY) || !Number.isFinite(maxX) || !Number.isFinite(maxY)) return null;
+        return { minX, minY, maxX, maxY };
+      }
+
+      let b = null;
+      if (selCluster) {
+        b = Store.indices.clusterBounds?.get(selCluster) || d.selBounds;
+      } else if (selChainId && Store.chains?.byChainId?.[selChainId] && Store.indices.clusterBounds) {
+        // Sequence selection: highlight union of cluster bounds in the chain
+        const chain = Store.chains.byChainId[selChainId];
+        const cids = chainToClusterIds(chain);
+        const bs = [];
+        for (const cid of cids) {
+          const bb = Store.indices.clusterBounds.get(String(cid));
+          if (bb) bs.push(bb);
+        }
+        b = unionBounds(bs);
+      }
+
+      if (b) {
+        const bp = padBounds(b);
+        traces.push({
+          x: [bp.minX, bp.maxX, bp.maxX, bp.minX, bp.minX],
+          y: [bp.minY, bp.minY, bp.maxY, bp.maxY, bp.minY],
+          mode: "lines",
+          type: "scattergl",
+          line: { color: "rgba(251,191,36,0.95)", width: 2 },
+          fill: "toself",
+          fillcolor: "rgba(251,191,36,0.15)",
+          hoverinfo: "skip",
+          name: "selection",
+          showlegend: false
+        });
+      }
+
+      const layout = {
+        margin: {t: 10, r: 10, b: 40, l: 55},
+        xaxis: {
+          range: [0,264],
+          title: "X",
+          gridcolor: "rgba(148,163,184,0.15)",
+          zeroline: false,
+          tickfont: {color: "#ffffff"},
+          titlefont: {color: "#ffffff"}
+        },
+        yaxis: {
+          range: [0,264],
+          title: "Y",
+          scaleanchor: "x",
+          scaleratio: 1,
+          gridcolor: "rgba(148,163,184,0.15)",
+          zeroline: false,
+          tickfont: {color: "#ffffff"},
+          titlefont: {color: "#ffffff"}
+        },
+        paper_bgcolor: "#000000",
+        plot_bgcolor: "#000000",
+        showlegend: false
+      };
+
+      // Use restyle for faster updates when only data changes (during playback)
+      // Use react when layout/config changes, selection changes, or first render
+      const hasSelection = traces.length > 1;
+      const selectionHash = hasSelection ? `${selCluster || ""}|${selChainId || ""}` : "";
+      const selectionChanged = selectionHash !== _lastSelectionHash;
+      _lastSelectionHash = selectionHash;
+      
+      const canUseRestyle = _plotInitialized && !layoutChanged && !selectionChanged;
+      
+      if (canUseRestyle) {
+        // Fast path: only update data using restyle (much faster than react)
+        Plotly.restyle("events-plot", {
+          x: [d.x],
+          y: [d.y],
+          "marker.color": [plotlyColors]
+        }, 0);
+      } else {
+        // Full render for layout changes, selection changes, or first render
+        Plotly.react("events-plot", traces, layout, { responsive: true, displayModeBar: true });
+        _plotInitialized = true;
+      }
+
+      const stats = (d.stride && d.stride > 1) ? `Downsample: 1/${d.stride}` : "";
+      document.getElementById("viewer-stats").textContent = stats;
+
+      // Legend
+      const legendEl = document.getElementById("viewer-legend");
+      let legendHtml = "";
+      if (d.mode === "classification") {
+        legendHtml = `
+          <div class="flex items-center gap-2 mb-1">
+            <span class="inline-block w-3 h-3 rounded-sm" style="background: rgba(220,20,20,1)"></span><span>Alpha</span>
+          </div>
+          <div class="flex items-center gap-2 mb-1">
+            <span class="inline-block w-3 h-3 rounded-sm" style="background: rgba(20,180,220,1)"></span><span>Beta</span>
+          </div>
+          <div class="flex items-center gap-2 mb-1">
+            <span class="inline-block w-3 h-3 rounded-sm" style="background: rgba(20,220,20,1)"></span><span>Gamma</span>
+          </div>
+          <div class="flex items-center gap-2 mb-1">
+            <span class="inline-block w-3 h-3 rounded-sm" style="background: rgba(150,150,150,1)"></span><span>Other</span>
+          </div>
+        `;
+      } else if (d.mode === "energy") {
+        const emin = (ev && isFinite(ev.energyMin)) ? ev.energyMin : 0;
+        const emax = (ev && isFinite(ev.energyMax)) ? ev.energyMax : 1;
+        const e0 = emin;
+        const e25 = emin + 0.25*(emax - emin);
+        const e50 = emin + 0.50*(emax - emin);
+        const e75 = emin + 0.75*(emax - emin);
+        const e1 = emax;
+        legendHtml = `
+          <div class="mb-1">Energy (ToT)</div>
+          <div class="w-full h-3 rounded overflow-hidden mb-1" style="background: linear-gradient(to right,
+            rgb(${turboRgb255(0).join(",")}),
+            rgb(${turboRgb255(0.25).join(",")}),
+            rgb(${turboRgb255(0.5).join(",")}),
+            rgb(${turboRgb255(0.75).join(",")}),
+            rgb(${turboRgb255(1).join(",")})
+          )"></div>
+          <div class="flex justify-between mono">
+            <span>${e0.toFixed(2)}</span>
+            <span>${e25.toFixed(2)}</span>
+            <span>${e50.toFixed(2)}</span>
+            <span>${e75.toFixed(2)}</span>
+            <span>${e1.toFixed(2)}</span>
+          </div>
+        `;
+      } else if (d.mode === "density") {
+        const globalMax = (ev && ev.densityGlobalMax) ? ev.densityGlobalMax : 1;
+        const windowMax = d.windowDensityMax || globalMax;
+        const maxC = Math.max(1, Math.min(globalMax, windowMax));
+        const c0 = 1;
+        const cMid = Math.max(1, Math.round(maxC / 2));
+        legendHtml = `
+          <div class="mb-1">Density (events / pixel)</div>
+          <div class="w-full h-3 rounded overflow-hidden mb-1" style="background: linear-gradient(to right,
+            rgb(${turboRgb255(0).join(",")}),
+            rgb(${turboRgb255(0.25).join(",")}),
+            rgb(${turboRgb255(0.5).join(",")}),
+            rgb(${turboRgb255(0.75).join(",")}),
+            rgb(${turboRgb255(1).join(",")})
+          )"></div>
+          <div class="flex justify-between mono">
+            <span>${c0}</span><span>${cMid}</span><span>${maxC}</span>
+          </div>
+        `;
+      } else if (d.mode === "time") {
+        const timeLabel = (d.view === "max") ? "Time (full range)" : "Time (within window)";
+        legendHtml = `
+          <div class="mb-1">${timeLabel}</div>
+          <div class="w-full h-3 rounded overflow-hidden mb-1" style="background: linear-gradient(to right,
+            rgb(${turboRgb255(0).join(",")}),
+            rgb(${turboRgb255(0.25).join(",")}),
+            rgb(${turboRgb255(0.5).join(",")}),
+            rgb(${turboRgb255(0.75).join(",")}),
+            rgb(${turboRgb255(1).join(",")})
+          )"></div>
+          <div class="flex justify-between mono">
+            <span>${fmtSci(d.tStart)}</span><span>${fmtSci(d.tEnd)}</span>
+          </div>
+        `;
+      }
+      legendEl.innerHTML = legendHtml;
+    }
+
+    // =====================================================================================
+    // Glue: render all
+    // =====================================================================================
+    function renderAll() {
+      updateGlobalStatus();
+      renderViewer();
+      renderClassPlots();
+      renderClassGallery();
+      renderSeqPlots();
+      renderSeqGallery();
+    }
+
+    // =====================================================================================
+    // Auto-load from same folder (needs to be served via HTTP; fetch won't work in strict file:// contexts)
+    // =====================================================================================
+    async function tryAutoLoad() {
+      // classification.csv
+      try { await loadClassificationFromText(await autoLoadText("classification.csv")); }
+      catch { document.getElementById("class-status").textContent = "Waiting for file… (classification.csv not auto-loaded)"; }
+
+      // segmented.txt
+      try { await loadEventsFromText(await autoLoadText("segmented.txt")); }
+      catch { /* events file not auto-loaded */ }
+
+      // chains.csv
+      try { await loadChainsFromText(await autoLoadText("chains.csv")); }
+      catch { document.getElementById("seq-status").textContent = "Waiting for file… (chains.csv not auto-loaded)"; }
+
+      // initialize controls even if data missing
+      initClassificationControls();
+      updateGlobalStatus();
+      renderViewer();
+    }
+
+    window.addEventListener("DOMContentLoaded", () => {
+      showTab("class-plots");
+      tryAutoLoad();
+      setViewerControlsForView();
+
+      // Resize Plotly plots when layout changes (prevents clipped labels after scrolling/resizing)
+      window.addEventListener("resize", () => {
+        try {
+          ["events-plot","class-plot-counts","class-plot-energy","class-plot-radius","seq-patterns","seq-lengths","seq-time-deltas"]
+            .forEach(id => { 
+              try { 
+                const el = document.getElementById(id);
+                // Only resize if element exists and is visible
+                if (el && el.offsetParent !== null) {
+                  Plotly.Plots.resize(id); 
+                }
+              } catch (resizeErr) {
+                // Silently ignore resize errors (plot may not be initialized yet)
+              } 
+            });
+        } catch {}
+      });
+    });
+  </script>
+</body>
+</html>
