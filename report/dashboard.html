@@ -31,6 +31,9 @@
     .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
     .thumbnail { image-rendering: pixelated; image-rendering: -moz-crisp-edges; image-rendering: crisp-edges; }
     .viewer-plot-wrap { padding: 8px; }
+    .viewer-plot-wrap:fullscreen { padding: 20px; display: flex; align-items: center; justify-content: center; background: #000000; }
+    .viewer-plot-wrap:-webkit-full-screen { padding: 20px; display: flex; align-items: center; justify-content: center; background: #000000; }
+    .viewer-plot-wrap:-ms-fullscreen { padding: 20px; display: flex; align-items: center; justify-content: center; background: #000000; }
     #events-plot-canvas { max-width: 100%; }
   </style>
 </head>
@@ -281,9 +284,10 @@
         <!-- Viewer layout: plot left, controls right -->
         <div class="flex flex-col xl:flex-row gap-4 min-w-0">
           <!-- Plot (smaller, on left) -->
-          <div class="viewer-plot-wrap overflow-hidden w-full xl:w-auto xl:flex-shrink-0 flex justify-center xl:justify-start">
+          <div class="viewer-plot-wrap overflow-hidden w-full xl:w-auto xl:flex-shrink-0 flex justify-center xl:justify-start relative" style="min-height: 400px;">
             <canvas id="events-plot-canvas" style="width: 400px; height: 400px; display: block; background: #000000; max-width: 100%;"></canvas>
             <div id="events-plot" style="display: none;"></div>
+            <button id="viewer-fullscreen" class="absolute top-2 right-2 bg-black/50 hover:bg-black/70 text-white text-xs px-2 py-1 rounded border border-white/30 z-10" title="Toggle fullscreen">⛶</button>
           </div>
 
           <!-- Controls (on right) -->
@@ -291,7 +295,8 @@
             <div class="flex items-center gap-2 min-w-0">
               <div class="text-xs text-slate-600 flex-shrink-0">View</div>
               <select id="viewer-view" class="select text-xs flex-1 min-w-0">
-                <option value="animated" selected>Animated</option>
+                <option value="animated" selected>Animated (fade)</option>
+                <option value="sum">Animated (sum)</option>
                 <option value="max">Max projection</option>
               </select>
             </div>
@@ -303,6 +308,20 @@
                 <option value="energy">Energy (ToT)</option>
                 <option value="density">Density</option>
                 <option value="time">Time</option>
+              </select>
+            </div>
+            
+            <div class="flex items-center gap-2 min-w-0" id="viewer-colormap-container" style="display: none;">
+              <div class="text-xs text-slate-600 flex-shrink-0">Colormap</div>
+              <select id="viewer-colormap" class="select text-xs flex-1 min-w-0">
+                <option value="turbo" selected>Turbo</option>
+                <option value="viridis">Viridis</option>
+                <option value="plasma">Plasma</option>
+                <option value="inferno">Inferno</option>
+                <option value="jet">Jet</option>
+                <option value="hot">Hot</option>
+                <option value="cool">Cool</option>
+                <option value="gray">Gray</option>
               </select>
             </div>
 
@@ -505,7 +524,7 @@
       return _ALPHA_LUT[j];
     }
 
-    // Turbo colormap approximation (matplotlib-like), returns [r,g,b] in 0..255
+    // Colormap functions (returns [r,g,b] in 0..255)
     function turboRgb01(x) {
       const t = clamp01(x);
       const r = 0.13572138 + t*(4.61539260 + t*(-42.66032258 + t*(132.13108234 + t*(-152.94239396 + t*59.28637943))));
@@ -513,9 +532,152 @@
       const b = 0.10667330 + t*(12.64194608 + t*(-60.58204836 + t*(110.36276771 + t*(-89.90310912 + t*27.34824973))));
       return [clamp01(r), clamp01(g), clamp01(b)];
     }
+    function viridisRgb01(x) {
+      const t = clamp01(x);
+      const r = 0.267003 + t*(0.004874 + t*(0.329415 + t*(-0.872266 + t*(1.330265 + t*(-0.660725 + t*0.107871)))));
+      const g = 0.004874 + t*(0.316558 + t*(0.765123 + t*(-0.999780 + t*(0.997340 + t*(-0.329195 + t*0.076190)))));
+      const b = 0.329415 + t*(0.765123 + t*(-0.999780 + t*(0.997340 + t*(-0.329195 + t*0.076190))));
+      return [clamp01(r), clamp01(g), clamp01(b)];
+    }
+    function plasmaRgb01(x) {
+      const t = clamp01(x);
+      const r = 0.050383 + t*(2.702282 + t*(0.215853 + t*(-0.854645 + t*(1.114802 + t*(-0.403949 + t*0.081243)))));
+      const g = 0.029086 + t*(0.063533 + t*(1.747671 + t*(-0.857901 + t*(0.348281 + t*(-0.045196 + t*0.006785)))));
+      const b = 0.527975 + t*(0.042257 + t*(0.193204 + t*(-0.640049 + t*(0.428619 + t*(-0.082190 + t*0.012450)))));
+      return [clamp01(r), clamp01(g), clamp01(b)];
+    }
+    function infernoRgb01(x) {
+      const t = clamp01(x);
+      const r = 0.000218 + t*(0.001536 + t*(0.533733 + t*(-0.135682 + t*(0.651439 + t*(-0.253366 + t*0.051199)))));
+      const g = 0.000218 + t*(0.001536 + t*(0.533733 + t*(-0.135682 + t*(0.651439 + t*(-0.253366 + t*0.051199)))));
+      const b = 0.029086 + t*(0.063533 + t*(1.747671 + t*(-0.857901 + t*(0.348281 + t*(-0.045196 + t*0.006785)))));
+      return [clamp01(r), clamp01(g), clamp01(b)];
+    }
+    function jetRgb01(x) {
+      const t = clamp01(x);
+      let r, g, b;
+      if (t < 0.25) {
+        r = 0;
+        g = 4 * t;
+        b = 1;
+      } else if (t < 0.5) {
+        r = 0;
+        g = 1;
+        b = 1 - 4 * (t - 0.25);
+      } else if (t < 0.75) {
+        r = 4 * (t - 0.5);
+        g = 1;
+        b = 0;
+      } else {
+        r = 1;
+        g = 1 - 4 * (t - 0.75);
+        b = 0;
+      }
+      return [clamp01(r), clamp01(g), clamp01(b)];
+    }
+    function hotRgb01(x) {
+      const t = clamp01(x);
+      let r, g, b;
+      if (t < 0.33) {
+        r = t / 0.33;
+        g = 0;
+        b = 0;
+      } else if (t < 0.66) {
+        r = 1;
+        g = (t - 0.33) / 0.33;
+        b = 0;
+      } else {
+        r = 1;
+        g = 1;
+        b = (t - 0.66) / 0.34;
+      }
+      return [clamp01(r), clamp01(g), clamp01(b)];
+    }
+    function coolRgb01(x) {
+      const t = clamp01(x);
+      return [t, 1 - t, 1];
+    }
+    function grayRgb01(x) {
+      const t = clamp01(x);
+      return [t, t, t];
+    }
+    
+    // Colormap lookup function
+    function getColormapRgb255(x, colormap) {
+      let rgb01;
+      switch(colormap) {
+        case "viridis": rgb01 = viridisRgb01(x); break;
+        case "plasma": rgb01 = plasmaRgb01(x); break;
+        case "inferno": rgb01 = infernoRgb01(x); break;
+        case "jet": rgb01 = jetRgb01(x); break;
+        case "hot": rgb01 = hotRgb01(x); break;
+        case "cool": rgb01 = coolRgb01(x); break;
+        case "gray": rgb01 = grayRgb01(x); break;
+        case "turbo": default: rgb01 = turboRgb01(x); break;
+      }
+      return [Math.round(rgb01[0]*255), Math.round(rgb01[1]*255), Math.round(rgb01[2]*255)];
+    }
+    
+    // Backward compatibility
     function turboRgb255(x) {
-      const [r,g,b] = turboRgb01(x);
-      return [Math.round(r*255), Math.round(g*255), Math.round(b*255)];
+      return getColormapRgb255(x, AppState.viewer.colormap || "turbo");
+    }
+    
+    // Apply colormap to greyscale thumbnail image
+    function applyColormapToThumbnail(imgSrc, colormap, callback) {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0);
+        
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const data = imageData.data;
+        
+        // Apply colormap to each pixel
+        for (let i = 0; i < data.length; i += 4) {
+          const grey = data[i]; // R channel (greyscale image has same value in R, G, B)
+          if (grey > 0) { // Skip black/transparent pixels
+            const normalized = grey / 255;
+            const [r, g, b] = getColormapRgb255(normalized, colormap);
+            data[i] = r;     // R
+            data[i + 1] = g;  // G
+            data[i + 2] = b; // B
+            // data[i + 3] stays as alpha
+          }
+        }
+        
+        ctx.putImageData(imageData, 0, 0);
+        callback(canvas.toDataURL());
+      };
+      img.onerror = () => callback(imgSrc); // Fallback to original if error
+      img.src = imgSrc;
+    }
+    
+    // Cache for colormapped thumbnails
+    const thumbnailCache = new Map();
+    
+    // Create a colormapped thumbnail image element
+    function createColormappedThumbnail(thumbnailSrc, colormap, className, style) {
+      if (!thumbnailSrc) return null;
+      const img = document.createElement("img");
+      img.className = className || "thumbnail";
+      if (style) {
+        Object.assign(img.style, style);
+      }
+      const cacheKey = `${thumbnailSrc}|${colormap}`;
+      if (thumbnailCache.has(cacheKey)) {
+        img.src = thumbnailCache.get(cacheKey);
+      } else {
+        img.src = thumbnailSrc;
+        applyColormapToThumbnail(thumbnailSrc, colormap, (coloredSrc) => {
+          thumbnailCache.set(cacheKey, coloredSrc);
+          img.src = coloredSrc;
+        });
+      }
+      return img;
     }
 
     const CLASS_RGB = {
@@ -542,12 +704,13 @@
       viewer: {
         windowSec: 0.5,
         timeSec: 0,
-        view: "animated", // animated | max
+        view: "animated", // animated | sum | max
         mode: "classification",
         speed: 1.0,
         isPlaying: false,
         playTimer: null,
         isDraggingTimeSlider: false, // Track if user is actively dragging the time slider
+        colormap: "turbo", // turbo | viridis | plasma | inferno | jet | hot | cool | gray
         // current filters are applied globally; viewer uses both classification + sequence filters if set.
       },
       filters: {
@@ -896,7 +1059,115 @@
 
     document.getElementById("viewer-mode").addEventListener("change", (e) => {
       AppState.viewer.mode = e.target.value;
+      // Show colormap selector for modes that use colormaps
+      const colormapContainer = document.getElementById("viewer-colormap-container");
+      if (e.target.value === "energy" || e.target.value === "density" || e.target.value === "time") {
+        colormapContainer.style.display = "flex";
+      } else {
+        colormapContainer.style.display = "none";
+      }
       scheduleRenderViewer();
+    });
+    
+    document.getElementById("viewer-colormap").addEventListener("change", (e) => {
+      AppState.viewer.colormap = e.target.value;
+      // Clear thumbnail cache when colormap changes
+      thumbnailCache.clear();
+      scheduleRenderViewer();
+      renderClassGallery();
+      renderSeqGallery();
+    });
+    
+    // Store original canvas size
+    const originalCanvasSize = { width: 400, height: 400 };
+    
+    function resizeCanvasForFullscreen() {
+      const canvas = document.getElementById("events-plot-canvas");
+      const plotWrap = document.querySelector(".viewer-plot-wrap");
+      const isFullscreen = !!(document.fullscreenElement || document.webkitFullscreenElement || document.msFullscreenElement);
+      
+      if (isFullscreen && plotWrap) {
+        // Fullscreen: scale to fit while maintaining aspect ratio
+        const rect = plotWrap.getBoundingClientRect();
+        const containerWidth = rect.width;
+        const containerHeight = rect.height;
+        const aspectRatio = originalCanvasSize.width / originalCanvasSize.height;
+        
+        let newWidth, newHeight;
+        if (containerWidth / containerHeight > aspectRatio) {
+          // Container is wider - fit to height
+          newHeight = containerHeight;
+          newWidth = newHeight * aspectRatio;
+        } else {
+          // Container is taller - fit to width
+          newWidth = containerWidth;
+          newHeight = newWidth / aspectRatio;
+        }
+        
+        canvas.style.width = `${newWidth}px`;
+        canvas.style.height = `${newHeight}px`;
+      } else {
+        // Normal: restore original size
+        canvas.style.width = `${originalCanvasSize.width}px`;
+        canvas.style.height = `${originalCanvasSize.height}px`;
+      }
+      
+      // Update WebGL renderer if it exists
+      if (webglRenderer && webglRenderer.canvas) {
+        const rect = canvas.getBoundingClientRect();
+        const dpr = window.devicePixelRatio || 1;
+        webglRenderer.canvas.width = rect.width * dpr;
+        webglRenderer.canvas.height = rect.height * dpr;
+        webglRenderer.gl.viewport(0, 0, webglRenderer.canvas.width, webglRenderer.canvas.height);
+      }
+      
+      // Re-render viewer
+      scheduleRenderViewer();
+    }
+    
+    // Fullscreen functionality
+    document.getElementById("viewer-fullscreen").addEventListener("click", () => {
+      const plotWrap = document.querySelector(".viewer-plot-wrap");
+      if (!document.fullscreenElement && !document.webkitFullscreenElement && !document.msFullscreenElement) {
+        if (plotWrap.requestFullscreen) {
+          plotWrap.requestFullscreen();
+        } else if (plotWrap.webkitRequestFullscreen) {
+          plotWrap.webkitRequestFullscreen();
+        } else if (plotWrap.msRequestFullscreen) {
+          plotWrap.msRequestFullscreen();
+        }
+      } else {
+        if (document.exitFullscreen) {
+          document.exitFullscreen();
+        } else if (document.webkitExitFullscreen) {
+          document.webkitExitFullscreen();
+        } else if (document.msExitFullscreen) {
+          document.msExitFullscreen();
+        }
+      }
+    });
+    
+    // Update canvas size and button text when entering/exiting fullscreen
+    function handleFullscreenChange() {
+      const btn = document.getElementById("viewer-fullscreen");
+      const isFullscreen = !!(document.fullscreenElement || document.webkitFullscreenElement || document.msFullscreenElement);
+      btn.textContent = isFullscreen ? "✕" : "⛶";
+      
+      // Small delay to ensure DOM has updated
+      setTimeout(() => {
+        resizeCanvasForFullscreen();
+      }, 100);
+    }
+    
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    document.addEventListener("webkitfullscreenchange", handleFullscreenChange);
+    document.addEventListener("msfullscreenchange", handleFullscreenChange);
+    
+    // Also handle window resize in fullscreen
+    window.addEventListener("resize", () => {
+      if (document.fullscreenElement || document.webkitFullscreenElement || document.msFullscreenElement) {
+        resizeCanvasForFullscreen();
+      }
     });
     document.getElementById("viewer-view").addEventListener("change", (e) => {
       AppState.viewer.view = e.target.value;
@@ -1423,21 +1694,60 @@
         if (isCompact) {
           // Compact layout: just the image, no borders, no text
           if (thumbnail) {
-            el.innerHTML = `<img src="${thumbnail}" alt="Cluster ${cid}" class="thumbnail" />`;
-            el.style.aspectRatio = "1";
+            const colormap = AppState.viewer.colormap || "turbo";
+            const img = document.createElement("img");
+            img.className = "thumbnail";
+            img.alt = `Cluster ${cid}`;
+            img.style.aspectRatio = "1";
+            const cacheKey = `${thumbnail}|${colormap}`;
+            if (thumbnailCache.has(cacheKey)) {
+              img.src = thumbnailCache.get(cacheKey);
+            } else {
+              img.src = thumbnail;
+              applyColormapToThumbnail(thumbnail, colormap, (coloredSrc) => {
+                thumbnailCache.set(cacheKey, coloredSrc);
+                img.src = coloredSrc;
+              });
+            }
+            el.appendChild(img);
           } else {
             el.innerHTML = `<div style="aspect-ratio: 1; background: rgba(148,163,184,0.2);"></div>`;
           }
         } else {
           // Grid layout: image with text labels
-          const thumbnailHtml = thumbnail ? `<img src="${thumbnail}" alt="Cluster ${cid}" class="thumbnail w-full h-auto rounded border border-slate-300" style="max-height: 90px; object-fit: contain;" />` : "";
-          el.innerHTML = `
-            ${thumbnailHtml}
-            <div class="flex items-center justify-between gap-2 mt-2">
-              <div class="text-sm font-semibold">Cluster ${cid}</div>
-              <div class="text-xs"><span class="chip">${rad}</span></div>
-            </div>
-          `;
+          if (thumbnail) {
+            const colormap = AppState.viewer.colormap || "turbo";
+            const img = document.createElement("img");
+            img.className = "thumbnail w-full h-auto rounded border border-slate-300";
+            img.style.maxHeight = "90px";
+            img.style.objectFit = "contain";
+            img.alt = `Cluster ${cid}`;
+            const cacheKey = `${thumbnail}|${colormap}`;
+            if (thumbnailCache.has(cacheKey)) {
+              img.src = thumbnailCache.get(cacheKey);
+            } else {
+              img.src = thumbnail;
+              applyColormapToThumbnail(thumbnail, colormap, (coloredSrc) => {
+                thumbnailCache.set(cacheKey, coloredSrc);
+                img.src = coloredSrc;
+              });
+            }
+            el.innerHTML = `
+              <div></div>
+              <div class="flex items-center justify-between gap-2 mt-2">
+                <div class="text-sm font-semibold">Cluster ${cid}</div>
+                <div class="text-xs"><span class="chip">${rad}</span></div>
+              </div>
+            `;
+            el.insertBefore(img, el.firstChild);
+          } else {
+            el.innerHTML = `
+              <div class="flex items-center justify-between gap-2 mt-2">
+                <div class="text-sm font-semibold">Cluster ${cid}</div>
+                <div class="text-xs"><span class="chip">${rad}</span></div>
+              </div>
+            `;
+          }
         }
 
         el.onclick = () => {
@@ -1673,8 +1983,13 @@
               const firstItem = chain[0];
               const thumb = getField(firstItem, ["Thumbnail", "thumbnail_png", "thumbnail"]);
               if (thumb) {
-                el.innerHTML = `<img src="${thumb}" alt="Chain" class="thumbnail" />`;
-                el.style.aspectRatio = "1";
+                const colormap = AppState.viewer.colormap || "turbo";
+                const img = createColormappedThumbnail(thumb, colormap, "thumbnail", { aspectRatio: "1" });
+                if (img) {
+                  el.appendChild(img);
+                } else {
+                  el.innerHTML = `<div style="aspect-ratio: 1; background: rgba(148,163,184,0.2);"></div>`;
+                }
               } else {
                 el.innerHTML = `<div style="aspect-ratio: 1; background: rgba(148,163,184,0.2);"></div>`;
               }
@@ -1687,6 +2002,7 @@
             let timeDistHtml = "";
 
             if (chain && chain.length > 0) {
+              const colormap = AppState.viewer.colormap || "turbo";
               // Show thumbnails in sequence
               thumbnailsHtml = '<div class="flex gap-2 mb-2 flex-wrap items-center">';
               for (let i = 0; i < chain.length; i++) {
@@ -1696,8 +2012,20 @@
                 
                 // Show thumbnail or placeholder
                 if (thumb) {
+                  const cacheKey = `${thumb}|${colormap}`;
+                  let thumbSrc = thumb;
+                  if (thumbnailCache.has(cacheKey)) {
+                    thumbSrc = thumbnailCache.get(cacheKey);
+                  } else {
+                    applyColormapToThumbnail(thumb, colormap, (coloredSrc) => {
+                      thumbnailCache.set(cacheKey, coloredSrc);
+                      // Update if element still exists
+                      const imgEl = el.querySelector(`img[data-thumb-index="${i}"]`);
+                      if (imgEl) imgEl.src = coloredSrc;
+                    });
+                  }
                   thumbnailsHtml += `<div class="flex flex-col items-center gap-1">
-                    <img src="${thumb}" alt="${cls}" class="thumbnail w-16 h-16 border border-slate-700 rounded" style="object-fit: contain;" />
+                    <img src="${thumbSrc}" alt="${cls}" class="thumbnail w-16 h-16 border border-slate-700 rounded" style="object-fit: contain;" data-thumb-index="${i}" />
                     <span class="text-[10px] text-slate-500">${cls}</span>
                   </div>`;
                 } else {
@@ -1806,8 +2134,13 @@
             const firstItem = exampleChain[0];
             const thumb = getField(firstItem, ["Thumbnail", "thumbnail_png", "thumbnail"]);
             if (thumb) {
-              el.innerHTML = `<img src="${thumb}" alt="Pattern" class="thumbnail" />`;
-              el.style.aspectRatio = "1";
+              const colormap = AppState.viewer.colormap || "turbo";
+              const img = createColormappedThumbnail(thumb, colormap, "thumbnail", { aspectRatio: "1" });
+              if (img) {
+                el.appendChild(img);
+              } else {
+                el.innerHTML = `<div style="aspect-ratio: 1; background: rgba(148,163,184,0.2);"></div>`;
+              }
             } else {
               el.innerHTML = `<div style="aspect-ratio: 1; background: rgba(148,163,184,0.2);"></div>`;
             }
@@ -1820,6 +2153,7 @@
           let timeDistHtml = "";
 
           if (exampleChain && exampleChain.length > 0) {
+            const colormap = AppState.viewer.colormap || "turbo";
             // Show thumbnails in sequence
             thumbnailsHtml = '<div class="flex gap-2 mb-2 flex-wrap items-center">';
             for (let i = 0; i < exampleChain.length; i++) {
@@ -1829,8 +2163,20 @@
               
               // Show thumbnail or placeholder
               if (thumb) {
+                const cacheKey = `${thumb}|${colormap}`;
+                let thumbSrc = thumb;
+                if (thumbnailCache.has(cacheKey)) {
+                  thumbSrc = thumbnailCache.get(cacheKey);
+                } else {
+                  applyColormapToThumbnail(thumb, colormap, (coloredSrc) => {
+                    thumbnailCache.set(cacheKey, coloredSrc);
+                    // Update if element still exists
+                    const imgEl = el.querySelector(`img[data-thumb-index="${i}"]`);
+                    if (imgEl) imgEl.src = coloredSrc;
+                  });
+                }
                 thumbnailsHtml += `<div class="flex flex-col items-center gap-1">
-                  <img src="${thumb}" alt="${cls}" class="thumbnail w-16 h-16 border border-slate-700 rounded" style="object-fit: contain;" />
+                  <img src="${thumbSrc}" alt="${cls}" class="thumbnail w-16 h-16 border border-slate-700 rounded" style="object-fit: contain;" data-thumb-index="${i}" />
                   <span class="text-[10px] text-slate-500">${cls}</span>
                 </div>`;
               } else {
@@ -2113,7 +2459,7 @@
 
       let stride = 1;
 
-      if (view === "max" || filterActive) {
+      if (view === "max" || view === "sum" || filterActive) {
         // Filter-aware path: collect passing indices, then downsample that set if needed.
         const passIdx = [];
         passIdx.length = 0; // Reuse array
@@ -2127,8 +2473,8 @@
             if (seqAllowed && seqAllowed.size === 0) continue;
           }
 
-          const a = (view === "animated") ? alphaFade(ti, center, win) : 1.0;
-          if (a <= 0) continue;
+          const a = (view === "animated") ? alphaFade(ti, center, win) : ((view === "sum") ? 1.0 : 1.0);
+          if (view === "animated" && a <= 0) continue;
 
           passIdx.push(i);
         }
@@ -2141,7 +2487,7 @@
           if (count >= MAX_POINTS) break;
           const i = passIdx[k];
           const ti = ev.t[i];
-          const a = (view === "animated") ? alphaFade(ti, center, win) : 1.0;
+          const a = (view === "animated") ? alphaFade(ti, center, win) : ((view === "sum") ? 1.0 : 1.0);
 
           x[count] = ev.x[i];
           y[count] = ev.y[i];
@@ -2173,8 +2519,8 @@
         for (let i = i0; i < i1; i += stride) {
           if (count >= MAX_POINTS) break;
           const ti = ev.t[i];
-          const a = alphaFade(ti, center, win);
-          if (a <= 0) continue;
+          const a = (view === "animated") ? alphaFade(ti, center, win) : ((view === "sum") ? 1.0 : 1.0);
+          if (view === "animated" && a <= 0) continue;
 
           x[count] = ev.x[i];
           y[count] = ev.y[i];
@@ -2248,7 +2594,7 @@
           pixelMap.forEach((p, key) => {
           const [xx, yy] = pixelKeyToXY(key);
           const v = clamp01((p.maxValue - minE) * invSpan);
-          const [r,g,b] = turboRgb255(v);
+          const [r,g,b] = getColormapRgb255(v, AppState.viewer.colormap || "turbo");
           xAgg[aggIdx] = xx;
           yAgg[aggIdx] = yy;
           alphaAgg[aggIdx] = 1.0;
@@ -2288,7 +2634,7 @@
           pixelMap.forEach((p, key) => {
             const [xx, yy] = pixelKeyToXY(key);
             const v = clamp01((p.maxValue - timeLo) * invSpan);
-            const [r,g,b] = turboRgb255(v);
+            const [r,g,b] = getColormapRgb255(v, AppState.viewer.colormap || "turbo");
             xAgg[aggIdx] = xx;
             yAgg[aggIdx] = yy;
             alphaAgg[aggIdx] = 1.0;
@@ -2374,7 +2720,7 @@
           }
         }
       } else if (mode === "time") {
-        // For animated view, use current window (lo to hi)
+        // For animated/sum view, use current window (lo to hi)
         const timeLo = lo;
         const timeHi = hi;
         const span = Math.max(1e-12, (timeHi - timeLo));
@@ -2382,8 +2728,8 @@
         colors = new Array(count);
         for (let i = 0; i < count; i++) {
           const v = clamp01((timeVals[i] - timeLo) * invSpan);
-          const [r,g,b] = turboRgb255(v);
-          const a = alpha[i];
+          const [r,g,b] = getColormapRgb255(v, AppState.viewer.colormap || "turbo");
+          const a = (view === "sum") ? 1.0 : alpha[i];
           colors[i] = [r/255, g/255, b/255, a];
         }
       } else if (mode === "energy" && ev.tot) {
@@ -2395,11 +2741,20 @@
             const energy = energyVals[i] || 0;
             const existing = pixelMap.get(key);
             if (existing) {
-              existing.sumEnergy += energy;
+              // For "sum" view, add energy without alpha weighting; for "animated", use alpha-weighted sum
+              if (view === "sum") {
+                existing.sumEnergy += energy;
+              } else {
+                existing.sumEnergy += energy * alpha[i];
+              }
               existing.sumAlpha += alpha[i];
               if (alpha[i] > existing.maxAlpha) existing.maxAlpha = alpha[i];
             } else {
-              pixelMap.set(key, { sumEnergy: energy, sumAlpha: alpha[i], maxAlpha: alpha[i] });
+              if (view === "sum") {
+                pixelMap.set(key, { sumEnergy: energy, sumAlpha: alpha[i], maxAlpha: alpha[i] });
+              } else {
+                pixelMap.set(key, { sumEnergy: energy * alpha[i], sumAlpha: alpha[i], maxAlpha: alpha[i] });
+              }
             }
           }
         }
@@ -2425,12 +2780,12 @@
         pixelMap.forEach((p, key) => {
           const [xx, yy] = pixelKeyToXY(key);
           const v = clamp01((p.sumEnergy - minE) * invSpan);
-          const [r,g,b] = turboRgb255(v);
+          const [r,g,b] = getColormapRgb255(v, AppState.viewer.colormap || "turbo");
           xAgg[aggIdx] = xx;
           yAgg[aggIdx] = yy;
-          // Use maxAlpha for brightness (similar to video rendering)
-          alphaAgg[aggIdx] = p.maxAlpha;
-          colors[aggIdx] = [r/255, g/255, b/255, p.maxAlpha];
+          // For "sum" view, use full alpha; for "animated", use maxAlpha for brightness
+          alphaAgg[aggIdx] = (view === "sum") ? 1.0 : p.maxAlpha;
+          colors[aggIdx] = [r/255, g/255, b/255, alphaAgg[aggIdx]];
           aggIdx++;
         });
         
@@ -2464,7 +2819,7 @@
         counts.forEach((cnt, key) => {
           const [xx, yy] = pixelKeyToXY(key);
           const v = clamp01(cnt * invNormMax);
-          const [r,g,b] = turboRgb255(v);
+          const [r,g,b] = getColormapRgb255(v, AppState.viewer.colormap || "turbo");
           xAgg[aggIdx] = xx;
           yAgg[aggIdx] = yy;
           alphaAgg[aggIdx] = 1.0;
@@ -2484,7 +2839,7 @@
         // classification or single-color fallback
         colors = new Array(count);
         for (let i = 0; i < count; i++) {
-          const a = alpha[i];
+          const a = (view === "sum") ? 1.0 : alpha[i];
           let r, g, b;
           if (ev.clusterId && classMap && cidVis[i]) {
             const cls = classMap.get(cidVis[i]) || "Other";
@@ -2554,6 +2909,10 @@
           this.canvas.width = rect.width * dpr;
           this.canvas.height = rect.height * dpr;
           this.gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+          // Trigger re-render if renderer is active
+          if (this.pointCount > 0) {
+            scheduleRenderViewer();
+          }
         };
         updateSize();
         window.addEventListener("resize", updateSize);
@@ -2806,14 +3165,15 @@
         const e50 = emin + 0.50*(emax - emin);
         const e75 = emin + 0.75*(emax - emin);
         const e1 = emax;
+        const colormap = AppState.viewer.colormap || "turbo";
         legendHtml = `
           <div class="mb-1">Energy (ToT)</div>
           <div class="w-full h-3 rounded overflow-hidden mb-1" style="background: linear-gradient(to right,
-            rgb(${turboRgb255(0).join(",")}),
-            rgb(${turboRgb255(0.25).join(",")}),
-            rgb(${turboRgb255(0.5).join(",")}),
-            rgb(${turboRgb255(0.75).join(",")}),
-            rgb(${turboRgb255(1).join(",")})
+            rgb(${getColormapRgb255(0, colormap).join(",")}),
+            rgb(${getColormapRgb255(0.25, colormap).join(",")}),
+            rgb(${getColormapRgb255(0.5, colormap).join(",")}),
+            rgb(${getColormapRgb255(0.75, colormap).join(",")}),
+            rgb(${getColormapRgb255(1, colormap).join(",")})
           )"></div>
           <div class="flex justify-between mono">
             <span>${e0.toFixed(2)}</span>
@@ -2829,14 +3189,15 @@
         const maxC = Math.max(1, Math.min(globalMax, windowMax));
         const c0 = 1;
         const cMid = Math.max(1, Math.round(maxC / 2));
+        const colormap = AppState.viewer.colormap || "turbo";
         legendHtml = `
           <div class="mb-1">Density (events / pixel)</div>
           <div class="w-full h-3 rounded overflow-hidden mb-1" style="background: linear-gradient(to right,
-            rgb(${turboRgb255(0).join(",")}),
-            rgb(${turboRgb255(0.25).join(",")}),
-            rgb(${turboRgb255(0.5).join(",")}),
-            rgb(${turboRgb255(0.75).join(",")}),
-            rgb(${turboRgb255(1).join(",")})
+            rgb(${getColormapRgb255(0, colormap).join(",")}),
+            rgb(${getColormapRgb255(0.25, colormap).join(",")}),
+            rgb(${getColormapRgb255(0.5, colormap).join(",")}),
+            rgb(${getColormapRgb255(0.75, colormap).join(",")}),
+            rgb(${getColormapRgb255(1, colormap).join(",")})
           )"></div>
           <div class="flex justify-between mono">
             <span>${c0}</span><span>${cMid}</span><span>${maxC}</span>
@@ -2844,14 +3205,15 @@
         `;
       } else if (d.mode === "time") {
         const timeLabel = (d.view === "max") ? "Time (full range)" : "Time (within window)";
+        const colormap = AppState.viewer.colormap || "turbo";
         legendHtml = `
           <div class="mb-1">${timeLabel}</div>
           <div class="w-full h-3 rounded overflow-hidden mb-1" style="background: linear-gradient(to right,
-            rgb(${turboRgb255(0).join(",")}),
-            rgb(${turboRgb255(0.25).join(",")}),
-            rgb(${turboRgb255(0.5).join(",")}),
-            rgb(${turboRgb255(0.75).join(",")}),
-            rgb(${turboRgb255(1).join(",")})
+            rgb(${getColormapRgb255(0, colormap).join(",")}),
+            rgb(${getColormapRgb255(0.25, colormap).join(",")}),
+            rgb(${getColormapRgb255(0.5, colormap).join(",")}),
+            rgb(${getColormapRgb255(0.75, colormap).join(",")}),
+            rgb(${getColormapRgb255(1, colormap).join(",")})
           )"></div>
           <div class="flex justify-between mono">
             <span>${fmtSci(d.tStart)}</span><span>${fmtSci(d.tEnd)}</span>
@@ -3091,14 +3453,15 @@
         const e50 = emin + 0.50*(emax - emin);
         const e75 = emin + 0.75*(emax - emin);
         const e1 = emax;
+        const colormap = AppState.viewer.colormap || "turbo";
         legendHtml = `
           <div class="mb-1">Energy (ToT)</div>
           <div class="w-full h-3 rounded overflow-hidden mb-1" style="background: linear-gradient(to right,
-            rgb(${turboRgb255(0).join(",")}),
-            rgb(${turboRgb255(0.25).join(",")}),
-            rgb(${turboRgb255(0.5).join(",")}),
-            rgb(${turboRgb255(0.75).join(",")}),
-            rgb(${turboRgb255(1).join(",")})
+            rgb(${getColormapRgb255(0, colormap).join(",")}),
+            rgb(${getColormapRgb255(0.25, colormap).join(",")}),
+            rgb(${getColormapRgb255(0.5, colormap).join(",")}),
+            rgb(${getColormapRgb255(0.75, colormap).join(",")}),
+            rgb(${getColormapRgb255(1, colormap).join(",")})
           )"></div>
           <div class="flex justify-between mono">
             <span>${e0.toFixed(2)}</span>
@@ -3114,14 +3477,15 @@
         const maxC = Math.max(1, Math.min(globalMax, windowMax));
         const c0 = 1;
         const cMid = Math.max(1, Math.round(maxC / 2));
+        const colormap = AppState.viewer.colormap || "turbo";
         legendHtml = `
           <div class="mb-1">Density (events / pixel)</div>
           <div class="w-full h-3 rounded overflow-hidden mb-1" style="background: linear-gradient(to right,
-            rgb(${turboRgb255(0).join(",")}),
-            rgb(${turboRgb255(0.25).join(",")}),
-            rgb(${turboRgb255(0.5).join(",")}),
-            rgb(${turboRgb255(0.75).join(",")}),
-            rgb(${turboRgb255(1).join(",")})
+            rgb(${getColormapRgb255(0, colormap).join(",")}),
+            rgb(${getColormapRgb255(0.25, colormap).join(",")}),
+            rgb(${getColormapRgb255(0.5, colormap).join(",")}),
+            rgb(${getColormapRgb255(0.75, colormap).join(",")}),
+            rgb(${getColormapRgb255(1, colormap).join(",")})
           )"></div>
           <div class="flex justify-between mono">
             <span>${c0}</span><span>${cMid}</span><span>${maxC}</span>
@@ -3129,14 +3493,15 @@
         `;
       } else if (d.mode === "time") {
         const timeLabel = (d.view === "max") ? "Time (full range)" : "Time (within window)";
+        const colormap = AppState.viewer.colormap || "turbo";
         legendHtml = `
           <div class="mb-1">${timeLabel}</div>
           <div class="w-full h-3 rounded overflow-hidden mb-1" style="background: linear-gradient(to right,
-            rgb(${turboRgb255(0).join(",")}),
-            rgb(${turboRgb255(0.25).join(",")}),
-            rgb(${turboRgb255(0.5).join(",")}),
-            rgb(${turboRgb255(0.75).join(",")}),
-            rgb(${turboRgb255(1).join(",")})
+            rgb(${getColormapRgb255(0, colormap).join(",")}),
+            rgb(${getColormapRgb255(0.25, colormap).join(",")}),
+            rgb(${getColormapRgb255(0.5, colormap).join(",")}),
+            rgb(${getColormapRgb255(0.75, colormap).join(",")}),
+            rgb(${getColormapRgb255(1, colormap).join(",")})
           )"></div>
           <div class="flex justify-between mono">
             <span>${fmtSci(d.tStart)}</span><span>${fmtSci(d.tEnd)}</span>
@@ -3184,6 +3549,19 @@
       showTab("class-plots");
       tryAutoLoad();
       setViewerControlsForView();
+      
+      // Initialize colormap selector visibility
+      const colormapContainer = document.getElementById("viewer-colormap-container");
+      const mode = AppState.viewer.mode || "classification";
+      if (mode === "energy" || mode === "density" || mode === "time") {
+        colormapContainer.style.display = "flex";
+      } else {
+        colormapContainer.style.display = "none";
+      }
+      
+      // Initialize colormap selector value
+      const colormapSelect = document.getElementById("viewer-colormap");
+      colormapSelect.value = AppState.viewer.colormap || "turbo";
 
       // Resize Plotly plots when layout changes (prevents clipped labels after scrolling/resizing)
       window.addEventListener("resize", () => {
