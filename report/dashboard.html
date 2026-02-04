@@ -298,6 +298,7 @@
                 <option value="animated" selected>Animated (fade)</option>
                 <option value="sum">Animated (sum)</option>
                 <option value="max">Max projection</option>
+                <option value="sum-proj">Sum projection</option>
               </select>
             </div>
             
@@ -333,19 +334,23 @@
             <div class="flex items-center gap-2 min-w-0">
               <div class="text-xs text-slate-600 flex-shrink-0">Speed</div>
               <input id="viewer-speed" type="range" min="0" max="2" step="0.05" value="1" class="flex-1 min-w-0" />
-              <div id="viewer-speedLabel" class="text-xs mono text-slate-600 w-12 flex-shrink-0">1.0×</div>
+              <div id="viewer-speedLabel" class="text-xs mono text-slate-600 w-16 flex-shrink-0">1.0×</div>
             </div>
 
             <div class="flex items-center gap-2 min-w-0">
               <div class="text-xs text-slate-600 flex-shrink-0">Time center</div>
               <input id="viewer-tCenter" type="range" min="0" max="1" step="0.001" value="0" class="flex-1 min-w-0" />
-              <div id="viewer-tCenterLabel" class="text-xs mono text-slate-600 w-12 flex-shrink-0">-</div>
+              <div id="viewer-tCenterLabel" class="text-xs mono text-slate-600 w-16 flex-shrink-0">-</div>
             </div>
 
             <div class="flex items-center gap-2 min-w-0">
               <div class="text-xs text-slate-600 flex-shrink-0">Window size</div>
-              <input id="viewer-winSize" type="range" min="1" max="1000000" step="1" value="1000000" class="flex-1 min-w-0" />
-              <div id="viewer-winLabel" class="text-xs mono text-slate-600 w-12 flex-shrink-0">-</div>
+              <input id="viewer-winSize" type="range" min="1" max="10000000" step="1" value="1000000" class="flex-1 min-w-0" />
+              <div id="viewer-winLabel" class="text-xs mono text-slate-600 w-16 flex-shrink-0">-</div>
+            </div>
+
+            <div class="flex items-center gap-2 min-w-0">
+              <button id="viewer-downsize" class="btn">Enable downsizing</button>
             </div>
 
             <!-- Stats and legend -->
@@ -471,19 +476,21 @@
 
     function setViewerControlsForView() {
       const isMax = (AppState.viewer.view === "max");
+      const isSumProj = (AppState.viewer.view === "sum-proj");
+      const isProjection = isMax || isSumProj;
       const playBtn = document.getElementById("viewer-playBtn");
       const speed = document.getElementById("viewer-speed");
       const tCenter = document.getElementById("viewer-tCenter");
       const winSize = document.getElementById("viewer-winSize");
 
-      // In max projection: disable time navigation + playback controls (full time projection)
-      playBtn.disabled = isMax;
-      speed.disabled = isMax;
-      tCenter.disabled = isMax;
-      winSize.disabled = isMax;
+      // In max/sum-proj projection: disable time navigation + playback controls (full time projection)
+      playBtn.disabled = isProjection;
+      speed.disabled = isProjection;
+      tCenter.disabled = isProjection;
+      winSize.disabled = isProjection;
 
       // Make disabled state visually clear
-      const dim = (el) => el.classList.toggle("opacity-50", isMax);
+      const dim = (el) => el.classList.toggle("opacity-50", isProjection);
       [playBtn, speed, tCenter, winSize].forEach(dim);
     }
 
@@ -704,13 +711,14 @@
       viewer: {
         windowSec: 0.5,
         timeSec: 0,
-        view: "animated", // animated | sum | max
+        view: "animated", // animated | sum | max | sum-proj
         mode: "classification",
         speed: 1.0,
         isPlaying: false,
         playTimer: null,
         isDraggingTimeSlider: false, // Track if user is actively dragging the time slider
         colormap: "turbo", // turbo | viridis | plasma | inferno | jet | hot | cool | gray
+        enableDownsize: false, // Enable automatic downsizing when too many points
         // current filters are applied globally; viewer uses both classification + sequence filters if set.
       },
       filters: {
@@ -931,8 +939,8 @@
       
       const win = Math.max(1, Math.floor(tMax * 0.01));
       winSlider.min = "1";
-      winSlider.max = String(Math.max(1, Math.floor(tMax / 20)));
-      winSlider.step = String(Math.max(1, Math.floor((tMax / 20) / 2000)));
+      winSlider.max = String(Math.max(1, Math.floor(tMax)));
+      winSlider.step = String(Math.max(1, Math.floor(tMax / 2000)));
       winSlider.value = String(win);
       
       AppState.viewer.timeSec = 0.1 * tMax;
@@ -1217,6 +1225,17 @@
     });
     document.getElementById("viewer-speed").addEventListener("input", (e) => {
       AppState.viewer.speed = Number(e.target.value);
+      scheduleRenderViewer();
+    });
+    const downsizeBtn = document.getElementById("viewer-downsize");
+    function syncDownsizeBtn() {
+      downsizeBtn.textContent = AppState.viewer.enableDownsize ? "Disable downsizing" : "Enable downsizing";
+      downsizeBtn.classList.toggle("bg-blue-100", AppState.viewer.enableDownsize);
+    }
+    syncDownsizeBtn();
+    downsizeBtn.addEventListener("click", () => {
+      AppState.viewer.enableDownsize = !AppState.viewer.enableDownsize;
+      syncDownsizeBtn();
       scheduleRenderViewer();
     });
     document.getElementById("viewer-playBtn").addEventListener("click", () => {
@@ -2406,6 +2425,9 @@
       if (view === "max") {
         document.getElementById("viewer-tCenterLabel").textContent = "MAX";
         document.getElementById("viewer-winLabel").textContent = "FULL";
+      } else if (view === "sum-proj") {
+        document.getElementById("viewer-tCenterLabel").textContent = "SUM";
+        document.getElementById("viewer-winLabel").textContent = "FULL";
       } else {
         document.getElementById("viewer-tCenterLabel").textContent = fmtSci(center);
         document.getElementById("viewer-winLabel").textContent = fmtSci(win);
@@ -2414,7 +2436,7 @@
 
       // Update slider if needed (but not if user is actively dragging it)
       const tCenterSlider = document.getElementById("viewer-tCenter");
-      if (tMax > 0 && view !== "max") {
+      if (tMax > 0 && view !== "max" && view !== "sum-proj") {
         tCenterSlider.max = "1";
         // Only update slider value if user is not actively dragging it
         if (!AppState.viewer.isDraggingTimeSlider) {
@@ -2422,8 +2444,8 @@
         }
       }
 
-      const lo = (view === "max") ? 0 : (center - win / 2);
-      const hi = (view === "max") ? tMax : (center + win / 2);
+      const lo = (view === "max" || view === "sum-proj") ? 0 : (center - win / 2);
+      const hi = (view === "max" || view === "sum-proj") ? tMax : (center + win / 2);
 
       const { canFilterByCluster, clsAllowed, seqAllowed } = computeViewerMask();
       const needsClusterIds = (mode === "classification") || (AppState.selection.clusterId != null);
@@ -2431,7 +2453,7 @@
       const selCluster = AppState.selection.clusterId != null ? String(AppState.selection.clusterId) : null;
 
       // Pre-allocate arrays with estimated size for better performance
-      const MAX_POINTS = (view === "max") ? 120000 : 60000;
+      const MAX_POINTS = (view === "max" || view === "sum-proj") ? 120000 : 60000;
       const x = new Array(MAX_POINTS);
       const y = new Array(MAX_POINTS);
       const cidVis = new Array(MAX_POINTS);
@@ -2459,7 +2481,7 @@
 
       let stride = 1;
 
-      if (view === "max" || view === "sum" || filterActive) {
+      if (view === "max" || view === "sum-proj" || filterActive) {
         // Filter-aware path: collect passing indices, then downsample that set if needed.
         const passIdx = [];
         passIdx.length = 0; // Reuse array
@@ -2479,7 +2501,7 @@
           passIdx.push(i);
         }
 
-        if (passIdx.length > MAX_POINTS) {
+        if (AppState.viewer.enableDownsize && passIdx.length > MAX_POINTS) {
           stride = Math.ceil(passIdx.length / MAX_POINTS);
         }
 
@@ -2514,10 +2536,12 @@
           count++;
         }
       } else {
-        // Fast path (no filters): stride by time-window size
-        stride = Math.max(1, Math.ceil((i1 - i0) / MAX_POINTS));
+        // Fast path (no filters): stride by time-window size (only if downsizing enabled)
+        if (AppState.viewer.enableDownsize) {
+          stride = Math.max(1, Math.ceil((i1 - i0) / MAX_POINTS));
+        }
         for (let i = i0; i < i1; i += stride) {
-          if (count >= MAX_POINTS) break;
+          if (AppState.viewer.enableDownsize && count >= MAX_POINTS) break;
           const ti = ev.t[i];
           const a = (view === "animated") ? alphaFade(ti, center, win) : ((view === "sum") ? 1.0 : 1.0);
           if (view === "animated" && a <= 0) continue;
@@ -2559,29 +2583,56 @@
       let colors = [];
       let windowDensityMax = null;
 
-      // For max projection, aggregate by pixel and take maximum value
-      if (view === "max") {
+      // For max/sum-proj projection, aggregate by pixel
+      if (view === "max" || view === "sum-proj") {
         const pixelMap = new Map(); // key: numeric (y*264+x) -> {maxValue, maxIdx, ...}
         
         if (mode === "energy" && ev.tot) {
-          // Max projection: take maximum energy at each pixel
-          for (let i = 0; i < count; i++) {
-            const key = pixelKey(x[i], y[i]);
-            const energy = energyVals[i] || 0;
-            const existing = pixelMap.get(key);
-            if (!existing || energy > existing.maxValue) {
-              pixelMap.set(key, { maxValue: energy, maxIdx: i });
+          if (view === "max") {
+            // Max projection: take maximum energy at each pixel
+            for (let i = 0; i < count; i++) {
+              const key = pixelKey(x[i], y[i]);
+              const energy = energyVals[i] || 0;
+              const existing = pixelMap.get(key);
+              if (!existing || energy > existing.maxValue) {
+                pixelMap.set(key, { maxValue: energy, maxIdx: i });
+              }
+            }
+          } else {
+            // Sum-proj projection: sum energy at each pixel
+            for (let i = 0; i < count; i++) {
+              const key = pixelKey(x[i], y[i]);
+              const energy = energyVals[i] || 0;
+              const existing = pixelMap.get(key);
+              if (!existing) {
+                pixelMap.set(key, { maxValue: energy, maxIdx: i });
+              } else {
+                existing.maxValue += energy;
+              }
             }
           }
           
-          // Normalize energy values
-          let minE = Infinity, maxE = -Infinity;
-          for (const p of pixelMap.values()) {
-            const e = p.maxValue;
-            if (e < minE) minE = e;
-            if (e > maxE) maxE = e;
+          // Normalize energy values using global min and percentile-based max
+          const minE = (ev && isFinite(ev.energyMin)) ? ev.energyMin : 0;
+          const globalMaxE = (ev && isFinite(ev.energyMax)) ? ev.energyMax : 1;
+          
+          // Use 95th percentile of pixel values for stable brightness (avoids outliers)
+          // For max: p.maxValue is max energy; for sum-proj: p.maxValue is sum of energy
+          const pixelValues = Array.from(pixelMap.values()).map(p => p.maxValue);
+          
+          let maxE;
+          if (view === "sum-proj") {
+            // For sum-proj, values are sums across all time, so they're much larger
+            // Use a lower percentile (90th) to avoid outliers making it too dim
+            // Don't clamp to globalMaxE since sums are inherently much larger than single-event max
+            const p90Max = pixelValues.length > 0 ? percentile(pixelValues, 0.90) : globalMaxE;
+            maxE = p90Max > 0 ? p90Max : globalMaxE;
+          } else {
+            // For max projection, use 95th percentile but ensure it's at least global max
+            const p95Max = pixelValues.length > 0 ? percentile(pixelValues, 0.95) : globalMaxE;
+            maxE = Math.max(p95Max, globalMaxE);
           }
-          if (minE === Infinity) { minE = 0; maxE = 1; }
+          
           const invSpan = maxE > minE ? 1 / (maxE - minE) : 0;
           
           const aggCount = pixelMap.size;
@@ -2609,7 +2660,7 @@
             alpha[i] = alphaAgg[i];
           }
         } else if (mode === "time") {
-          // Max projection: take maximum (latest) time at each pixel
+          // Max/Sum projection: for time mode, use latest time (sum doesn't make sense for time)
           const timeLo = 0;
           const timeHi = tMax;
           const span = Math.max(1e-12, (timeHi - timeLo));
@@ -2649,15 +2700,43 @@
             alpha[i] = alphaAgg[i];
           }
         } else if (mode === "classification") {
-          // Max projection: for classification, take the class with highest energy (or most recent if no energy)
-          for (let i = 0; i < count; i++) {
-            const key = pixelKey(x[i], y[i]);
-            const energy = (ev.tot && ev.tot[i]) ? ev.tot[i] : 0;
-            const time = timeVals[i];
-            const existing = pixelMap.get(key);
-            
-            if (!existing || energy > existing.maxValue || (energy === existing.maxValue && time > existing.maxTime)) {
-              pixelMap.set(key, { maxValue: energy, maxTime: time, maxIdx: i });
+          if (view === "max") {
+            // Max projection: for classification, take the class with highest energy (or most recent if no energy)
+            for (let i = 0; i < count; i++) {
+              const key = pixelKey(x[i], y[i]);
+              const energy = (ev.tot && ev.tot[i]) ? ev.tot[i] : 0;
+              const time = timeVals[i];
+              const existing = pixelMap.get(key);
+              
+              if (!existing || energy > existing.maxValue || (energy === existing.maxValue && time > existing.maxTime)) {
+                pixelMap.set(key, { maxValue: energy, maxTime: time, maxIdx: i });
+              }
+            }
+          } else {
+            // Sum-proj projection: count events per class at each pixel, show dominant class
+            const classCounts = new Map(); // key -> Map(class -> count)
+            for (let i = 0; i < count; i++) {
+              const key = pixelKey(x[i], y[i]);
+              const cid = cidVis[i];
+              let cls = "Other";
+              if (ev.clusterId && classMap && cid) {
+                cls = classMap.get(cid) || "Other";
+              }
+              
+              if (!classCounts.has(key)) {
+                classCounts.set(key, new Map());
+                pixelMap.set(key, { maxValue: 0, maxIdx: i, dominantClass: cls });
+              }
+              
+              const counts = classCounts.get(key);
+              counts.set(cls, (counts.get(cls) || 0) + 1);
+              
+              const p = pixelMap.get(key);
+              const clsCount = counts.get(cls);
+              if (clsCount > p.maxValue) {
+                p.maxValue = clsCount;
+                p.dominantClass = cls;
+              }
             }
           }
           
@@ -2673,7 +2752,10 @@
             const idx = p.maxIdx;
             const a = 1.0;
             let r, g, b;
-            if (ev.clusterId && classMap && cidVis[idx]) {
+            if (view === "sum-proj" && p.dominantClass) {
+              // Sum-proj projection: use dominant class
+              [r,g,b] = CLASS_RGB[p.dominantClass] || CLASS_RGB.Other;
+            } else if (ev.clusterId && classMap && cidVis[idx]) {
               const cls = classMap.get(cidVis[idx]) || "Other";
               [r,g,b] = CLASS_RGB[cls] || CLASS_RGB.Other;
             } else if (ev.clusterId && cidVis[idx]) {
@@ -2698,25 +2780,66 @@
             alpha[i] = alphaAgg[i];
           }
         } else {
-          // Fallback: just aggregate by pixel (take first occurrence)
-          const pixelSet = new Set();
-          const xAgg = [], yAgg = [], alphaAgg = [];
-          for (let i = 0; i < count; i++) {
-            const key = pixelKey(x[i], y[i]);
-            if (!pixelSet.has(key)) {
-              pixelSet.add(key);
-              xAgg.push(x[i]);
-              yAgg.push(y[i]);
-              alphaAgg.push(1.0);
-              colors.push([25/255, 200/255, 230/255, 1.0]);
+          // Fallback: for density mode or other modes in max/sum-proj projection
+          if (view === "sum-proj") {
+            // Sum-proj projection: count events per pixel
+            const pixelCounts = new Map();
+            for (let i = 0; i < count; i++) {
+              const key = pixelKey(x[i], y[i]);
+              pixelCounts.set(key, (pixelCounts.get(key) || 0) + 1);
             }
-          }
-          const aggCount = xAgg.length;
-          x.length = aggCount; y.length = aggCount; alpha.length = aggCount;
-          for (let i = 0; i < aggCount; i++) {
-            x[i] = xAgg[i];
-            y[i] = yAgg[i];
-            alpha[i] = alphaAgg[i];
+            
+            const aggCount = pixelCounts.size;
+            const xAgg = new Array(aggCount);
+            const yAgg = new Array(aggCount);
+            const alphaAgg = new Array(aggCount);
+            colors = new Array(aggCount);
+            let aggIdx = 0;
+            
+            let maxCount = 0;
+            for (const count of pixelCounts.values()) {
+              if (count > maxCount) maxCount = count;
+            }
+            const invMax = maxCount > 0 ? 1 / maxCount : 0;
+            
+            pixelCounts.forEach((count, key) => {
+              const [xx, yy] = pixelKeyToXY(key);
+              const v = clamp01(count * invMax);
+              const [r,g,b] = getColormapRgb255(v, AppState.viewer.colormap || "turbo");
+              xAgg[aggIdx] = xx;
+              yAgg[aggIdx] = yy;
+              alphaAgg[aggIdx] = 1.0;
+              colors[aggIdx] = [r/255, g/255, b/255, 1.0];
+              aggIdx++;
+            });
+            
+            x.length = aggCount; y.length = aggCount; alpha.length = aggCount;
+            for (let i = 0; i < aggCount; i++) {
+              x[i] = xAgg[i];
+              y[i] = yAgg[i];
+              alpha[i] = alphaAgg[i];
+            }
+          } else {
+            // Max projection fallback: just aggregate by pixel (take first occurrence)
+            const pixelSet = new Set();
+            const xAgg = [], yAgg = [], alphaAgg = [];
+            for (let i = 0; i < count; i++) {
+              const key = pixelKey(x[i], y[i]);
+              if (!pixelSet.has(key)) {
+                pixelSet.add(key);
+                xAgg.push(x[i]);
+                yAgg.push(y[i]);
+                alphaAgg.push(1.0);
+                colors.push([25/255, 200/255, 230/255, 1.0]);
+              }
+            }
+            const aggCount = xAgg.length;
+            x.length = aggCount; y.length = aggCount; alpha.length = aggCount;
+            for (let i = 0; i < aggCount; i++) {
+              x[i] = xAgg[i];
+              y[i] = yAgg[i];
+              alpha[i] = alphaAgg[i];
+            }
           }
         }
       } else if (mode === "time") {
@@ -2759,14 +2882,17 @@
           }
         }
         
-        // Normalize energy values (use accumulated sum)
-        let minE = Infinity, maxE = -Infinity;
-        for (const p of pixelMap.values()) {
-          const e = p.sumEnergy;
-          if (e < minE) minE = e;
-          if (e > maxE) maxE = e;
-        }
-        if (minE === Infinity) { minE = 0; maxE = 1; }
+        // Normalize energy values using global min and percentile-based max
+        // For sum view, we're summing energy values, so use percentile of sum values
+        const minE = (ev && isFinite(ev.energyMin)) ? ev.energyMin : 0;
+        const globalMaxE = (ev && isFinite(ev.energyMax)) ? ev.energyMax : 1;
+        
+        // Use 95th percentile of sum values for stable brightness (avoids outliers)
+        const sumValues = Array.from(pixelMap.values()).map(p => p.sumEnergy);
+        const p95Max = sumValues.length > 0 ? percentile(sumValues, 0.95) : globalMaxE;
+        // Use the larger of percentile or global max to ensure consistency
+        const maxE = Math.max(p95Max, globalMaxE);
+        
         const invSpan = maxE > minE ? 1 / (maxE - minE) : 0;
         
         // Build aggregated arrays
