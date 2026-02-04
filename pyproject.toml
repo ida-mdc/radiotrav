@@ -1,7 +1,7 @@
 [project]
-name = "radiotrap"
+name = "radiotrav"
 version = "0.1.0"
-description = "Convert MiniPIX .t3pa event files into images or videos."
+description = "Time Resolved Autoradiography Visualization for Nuclear Radiation"
 authors = [{name="Your Name"}]
 requires-python = ">=3.9"
 
@@ -25,4 +25,4 @@ dev = ["pytest"]
 package = true
 
 [project.scripts]
-radiotrap = "radiotrap.main:cli"
+radiotrav = "radiotrav.main:cli"

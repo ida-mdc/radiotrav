@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Comprehensive test script for radiotrap CLI features.
+Comprehensive test script for radiotrav CLI features.
 
 Usage:
     python test_all_features.py <input_file> [--dry-run]
@@ -93,7 +93,7 @@ def main():
         print(f"[DRY RUN] Would create/clean test directory: {test_dir}")
     
     print(f"\n{'='*70}")
-    print("RADIOTRAP FEATURE TEST SUITE")
+    print("RADIOTRAV FEATURE TEST SUITE")
     print(f"{'='*70}")
     print(f"Input file: {input_file}")
     print(f"Output directory: {test_dir}")
@@ -108,7 +108,7 @@ def main():
     # ========================================================================
     process_dir = test_dir / "process_full"
     cmd = [
-        "radiotrap", "process",
+        "radiotrav", "process",
         input_file,
         str(process_dir),
         "--time-window", "1e6",  # 1ms in nanoseconds
@@ -127,7 +127,7 @@ def main():
         # Copy segmented.txt to the new directory so it can be skipped
         shutil.copy(process_dir / "segmented.txt", process_skip_seg_dir / "segmented.txt")
         cmd = [
-            "radiotrap", "process",
+            "radiotrav", "process",
             input_file,
             str(process_skip_seg_dir),
             "--skip-existing-segmentation",
@@ -137,7 +137,7 @@ def main():
         # In dry-run, assume the file would exist and show the command
         process_skip_seg_dir = test_dir / "process_skip_segmentation"
         cmd = [
-            "radiotrap", "process",
+            "radiotrav", "process",
             input_file,
             str(process_skip_seg_dir),
             "--skip-existing-segmentation",
@@ -149,7 +149,7 @@ def main():
     # ========================================================================
     if DRY_RUN or (process_dir / "classification.csv").exists():
         cmd = [
-            "radiotrap", "render",
+            "radiotrav", "render",
             str(process_dir),  # project output dir: uses segmented.txt + classification.csv
             str(test_dir / "render_animated_classification.mp4"),
             "--view", "animated",
@@ -163,7 +163,7 @@ def main():
     # ========================================================================
     if DRY_RUN or (process_dir / "classification.csv").exists():
         cmd = [
-            "radiotrap", "render",
+            "radiotrav", "render",
             str(process_dir),
             str(test_dir / "render_alpha_only.mp4"),
             "--radiation", "Alpha",
@@ -178,7 +178,7 @@ def main():
     # ========================================================================
     if DRY_RUN or (process_dir / "classification.csv").exists():
         cmd = [
-            "radiotrap", "render",
+            "radiotrav", "render",
             str(process_dir),
             str(test_dir / "render_max_classification.png"),
             "--view", "max",
@@ -190,7 +190,7 @@ def main():
     # TEST 6: Render - Animated, Energy mode
     # ========================================================================
     cmd = [
-        "radiotrap", "render",
+        "radiotrav", "render",
         input_file,
         str(test_dir / "render_animated_energy.mp4"),
         "--view", "animated",
@@ -204,7 +204,7 @@ def main():
     # TEST 7: Render - Max projection, Energy mode
     # ========================================================================
     cmd = [
-        "radiotrap", "render",
+        "radiotrav", "render",
         input_file,
         str(test_dir / "render_max_energy.png"),
         "--view", "max",
@@ -216,7 +216,7 @@ def main():
     # TEST 8: Render - Animated, Density mode
     # ========================================================================
     cmd = [
-        "radiotrap", "render",
+        "radiotrav", "render",
         input_file,
         str(test_dir / "render_animated_density.mp4"),
         "--view", "animated",
@@ -230,7 +230,7 @@ def main():
     # TEST 9: Render - Max projection, Density mode
     # ========================================================================
     cmd = [
-        "radiotrap", "render",
+        "radiotrav", "render",
         input_file,
         str(test_dir / "render_max_density.png"),
         "--view", "max",
@@ -242,7 +242,7 @@ def main():
     # TEST 10: Render - Animated, Time mode
     # ========================================================================
     cmd = [
-        "radiotrap", "render",
+        "radiotrav", "render",
         input_file,
         str(test_dir / "render_animated_time.mp4"),
         "--view", "animated",
@@ -256,7 +256,7 @@ def main():
     # TEST 11: Render - Max projection, Time mode
     # ========================================================================
     cmd = [
-        "radiotrap", "render",
+        "radiotrav", "render",
         input_file,
         str(test_dir / "render_max_time.png"),
         "--view", "max",
@@ -269,7 +269,7 @@ def main():
     # ========================================================================
     if DRY_RUN or (process_dir / "classification.csv").exists():
         cmd = [
-            "radiotrap", "render",
+            "radiotrav", "render",
             str(process_dir),
             str(test_dir / "render_custom_speed.mp4"),
             "--view", "animated",
@@ -283,7 +283,7 @@ def main():
     # TEST 13: Render with row filtering
     # ========================================================================
     cmd = [
-        "radiotrap", "render",
+        "radiotrav", "render",
         input_file,
         str(test_dir / "render_filtered.mp4"),
         "--view", "animated",

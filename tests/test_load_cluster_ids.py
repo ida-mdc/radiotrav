@@ -14,7 +14,7 @@ import sys
 from pathlib import Path
 # Add src directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent / 'src'))
-from radiotrap.main import load_cluster_ids_chunk, _run_segment
+from radiotrav.main import load_cluster_ids_chunk, _run_segment
 
 
 def test_load_cluster_ids():

@@ -4,7 +4,7 @@ from tqdm import tqdm
 from imageio import get_writer
 import tifffile
 
-from radiotrap.overlay import draw_hud
+from radiotrav.overlay import draw_hud
 
 
 # ============================================================

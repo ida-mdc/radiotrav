@@ -9,7 +9,7 @@ Tests for video rendering fade: _alpha_fade and fade behavior.
 import numpy as np
 import pytest
 
-from radiotrap.render import _alpha_fade
+from radiotrav.render import _alpha_fade
 
 
 # ============== _alpha_fade ==============

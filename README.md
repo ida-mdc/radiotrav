@@ -1,6 +1,6 @@
-# RadioTrap: Radiation Event Processor
+# RadioTRAV: Time Resolved Autoradiography Visualization for Nuclear Radiation
 
-RadioTrap processes, analyzes, and visualizes radiation data from **Timepix3** detectors (e.g. `.t3pa` or derived `.txt` / segmented text files).
+RadioTRAV (Time Resolved Autoradiography Visualization) processes, analyzes, and visualizes nuclear radiation data from **Timepix3** detectors (e.g. `.t3pa` or derived `.txt` / segmented text files).
 
 - **Rendering**: raw event heatmaps to MP4 or TIFF.
 - **Segmentation**: cluster ID assignment for individual tracks.
@@ -12,7 +12,7 @@ RadioTrap processes, analyzes, and visualizes radiation data from **Timepix3** d
 
 ## Installation
 
-RadioTrap uses **uv** for environment and dependency management.
+RadioTRAV uses **uv** for environment and dependency management.
 
 ### Install `uv`
 
@@ -35,8 +35,8 @@ Restart your terminal after installing so `uv` is on your `PATH`.
 Clone this repository and `cd` into the project folder:
 
 ```bash
-git clone https://gitlab.com/ida-mdc/radiotrap.git
-cd radiotrap
+git clone https://gitlab.com/ida-mdc/radiotrav.git
+cd radiotrav
 ```
 
 ### Install dependencies
@@ -48,10 +48,10 @@ uv sync
 uv pip install -e .
 ```
 
-The `radiotrap` command-line tool is now available as:
+The `radiotrav` command-line tool is now available as:
 
 ```bash
-uv run radiotrap ...
+uv run radiotrav ...
 ```
 
 ---
@@ -63,7 +63,7 @@ uv run radiotrap ...
 Run the complete pipeline (segmentation, classification, and sequence analysis):
 
 ```bash
-uv run radiotrap process input_events.t3pa output_dir --time-window 100 --spatial-radius 2
+uv run radiotrav process input_events.t3pa output_dir --time-window 100 --spatial-radius 2
 ```
 
 This creates `segmented.txt`, `classification.csv`, `chains.csv`, and `dashboard.html` in the output directory.
@@ -73,7 +73,7 @@ This creates `segmented.txt`, `classification.csv`, `chains.csv`, and `dashboard
 You can adjust the thresholds used for Alpha/Beta/Gamma classification:
 
 ```bash
-uv run radiotrap process input_events.t3pa output_dir --time-window 100 \
+uv run radiotrav process input_events.t3pa output_dir --time-window 100 \
   --gamma-max-area 10 \
   --alpha-min-radius 1.5 \
   --alpha-min-roundness 0.85 \
@@ -98,17 +98,17 @@ Render videos with filtering options:
 
 ```bash
 # Basic rendering
-uv run radiotrap render output_dir output.mp4
+uv run radiotrav render output_dir output.mp4
 
 # Filter by radiation type
-uv run radiotrap render output_dir alpha_only.mp4 --radiation Alpha
+uv run radiotrav render output_dir alpha_only.mp4 --radiation Alpha
 
 # Filter by sequence pattern
-uv run radiotrap render output_dir beta_alpha_chains.mp4 \
+uv run radiotrav render output_dir beta_alpha_chains.mp4 \
   --seq-query "Beta - Alpha" --seq-exact
 
 # Custom projection and mode
-uv run radiotrap render output_dir energy_sideview.mp4 \
+uv run radiotrav render output_dir energy_sideview.mp4 \
   --projection yt --mode energy --speed 100
 ```
 
@@ -130,13 +130,13 @@ uv pip install -e .
 
 ### Command Reference {#command-reference}
 
-All commands are invoked as `uv run radiotrap <command> ...`.
+All commands are invoked as `uv run radiotrav <command> ...`.
 
 #### `process`
 
 Run the complete pipeline: segmentation, classification, and sequence analysis.
 
-- **Usage:** `uv run radiotrap process INPUT_FILE OUTPUT_DIR --time-window ...`
+- **Usage:** `uv run radiotrav process INPUT_FILE OUTPUT_DIR --time-window ...`
 - **Options:**
   - `--time-window [FLOAT]` (required): maximum time gap **in nanoseconds** between pixels in the same cluster.
   - `--spatial-radius [INT]` (default: `1`): spatial search radius in pixels.
@@ -159,7 +159,7 @@ Run the complete pipeline: segmentation, classification, and sequence analysis.
 
 Render events to video/image with filtering options matching the dashboard.
 
-- **Usage:** `uv run radiotrap render INPUT_PATH OUTPUT_FILE [options]`
+- **Usage:** `uv run radiotrav render INPUT_PATH OUTPUT_FILE [options]`
 - **Input:** `INPUT_PATH` can be a project output directory (with `segmented.txt`, `classification.csv`, `chains.csv`) or a single events file.
 - **Options:**
   - `--classification-csv [PATH]`: classification CSV (optional if input is project output dir).
@@ -185,7 +185,7 @@ Both `process` and `render` support partial loading of very large input files us
 Example: render only the first 10,000 events to check settings:
 
 ```bash
-uv run radiotrap render input.txt test.mp4 --n-rows 10000
+uv run radiotrav render input.txt test.mp4 --n-rows 10000
 ```
 
 Use the same pattern with `process` when testing on subsets of large datasets.

@@ -11,7 +11,7 @@ import sys
 
 # Add src directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent / 'src'))
-from radiotrap.io import load_data_as_arrays, detect_file_type
+from radiotrav.io import load_data_as_arrays, detect_file_type
 
 
 def test_t3pa_loading():

@@ -4,18 +4,18 @@ import pandas as pd
 import os
 from pathlib import Path
 import imageio
-from radiotrap.cluster import (
+from radiotrav.cluster import (
     classify_clusters,
 )
-from radiotrap.io import load_data_as_arrays, detect_file_type
-from radiotrap.render import (
+from radiotrav.io import load_data_as_arrays, detect_file_type
+from radiotrav.render import (
     render_tiff_stream,
     render_video_stream,
     render_yt_discrete,
     render_xy_discrete,
 )
-from radiotrap.segmentation import segment_events_spatiotemporal
-from radiotrap.sequences import find_sequences
+from radiotrav.segmentation import segment_events_spatiotemporal
+from radiotrav.sequences import find_sequences
 
 
 # ============================================================
@@ -33,7 +33,7 @@ def resolve_render_input(input_path, classification_csv_arg, chains_path_arg):
         chains_path = path / "chains.csv"
         if not events_path.exists():
             raise click.ClickException(
-                f"Directory {path} has no segmented.txt. Run 'radiotrap process' first or pass a file."
+                f"Directory {path} has no segmented.txt. Run 'radiotrav process' first or pass a file."
             )
         return (
             str(events_path),
@@ -292,10 +292,10 @@ def _run_classify(input_file, output_csv, start_row, n_rows,
     if file_type != "txt":
         raise click.ClickException(
             "Classification requires a TXT file containing a 'Cluster_ID' column "
-            "(i.e. the output of 'radiotrap process'). "
+            "(i.e. the output of 'radiotrav process'). "
             f"Got: {input_file}\n"
             "Run:\n"
-            "  radiotrap process <input.t3pa|input.txt> output_dir --time-window <...>\n"
+            "  radiotrav process <input.t3pa|input.txt> output_dir --time-window <...>\n"
             "This will generate segmented.txt, classification.csv, and chains.csv."
         )
 
