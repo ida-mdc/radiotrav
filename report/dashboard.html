@@ -1697,7 +1697,7 @@
             const colormap = AppState.viewer.colormap || "turbo";
             const img = document.createElement("img");
             img.className = "thumbnail";
-            img.alt = `Cluster ${cid}`;
+            img.alt = `${cid}`;
             img.style.aspectRatio = "1";
             const cacheKey = `${thumbnail}|${colormap}`;
             if (thumbnailCache.has(cacheKey)) {
@@ -1721,7 +1721,7 @@
             img.className = "thumbnail w-full h-auto rounded border border-slate-300";
             img.style.maxHeight = "90px";
             img.style.objectFit = "contain";
-            img.alt = `Cluster ${cid}`;
+            img.alt = `${cid}`;
             const cacheKey = `${thumbnail}|${colormap}`;
             if (thumbnailCache.has(cacheKey)) {
               img.src = thumbnailCache.get(cacheKey);
@@ -1735,7 +1735,7 @@
             el.innerHTML = `
               <div></div>
               <div class="flex items-center justify-between gap-2 mt-2">
-                <div class="text-sm font-semibold">Cluster ${cid}</div>
+                <div class="text-sm font-semibold">${cid}</div>
                 <div class="text-xs"><span class="chip">${rad}</span></div>
               </div>
             `;
@@ -1743,7 +1743,7 @@
           } else {
             el.innerHTML = `
               <div class="flex items-center justify-between gap-2 mt-2">
-                <div class="text-sm font-semibold">Cluster ${cid}</div>
+                <div class="text-sm font-semibold">${cid}</div>
                 <div class="text-xs"><span class="chip">${rad}</span></div>
               </div>
             `;

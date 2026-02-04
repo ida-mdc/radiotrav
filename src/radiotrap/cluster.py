@@ -3,7 +3,6 @@ import pandas as pd
 import base64
 import io
 from tqdm import tqdm
-import matplotlib.cm as cm
 from PIL import Image
 from scipy.ndimage import distance_transform_edt
 
@@ -72,20 +71,21 @@ def analyze_cluster_shape(group):
         mask_roundness = 1.0  # Single point is round
 
     # --- THUMBNAIL GENERATION ---
-    # Normalize Energy Grid for Visualization
+    # Store as greyscale (energy values normalized 0-255) for colormap application in JS
     max_val = grid.max()
     if max_val > 0:
-        grid /= max_val
+        grid_normalized = grid / max_val
+    else:
+        grid_normalized = grid
+    
+    # Convert to greyscale (0-255) - store normalized energy values
+    greyscale = (grid_normalized * 255).astype(np.uint8)
+    
+    # Apply mask: set background to 0 (will be transparent/black in JS)
+    greyscale[binary_mask == 0] = 0
 
-    cmap = cm.get_cmap("turbo")
-    rgba = cmap(grid)
-    rgb = (rgba[..., :3] * 255).astype(np.uint8)
-
-    # Apply mask to make background black
-    rgb[binary_mask == 0] = 0
-
-    # Encode
-    img = Image.fromarray(rgb)
+    # Encode as greyscale PNG
+    img = Image.fromarray(greyscale, mode='L')
     buffer = io.BytesIO()
     img.save(buffer, format="PNG")
     b64_str = "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode("utf-8")
@@ -98,9 +98,29 @@ def analyze_cluster_shape(group):
     })
 
 
-def classify_clusters(df):
+def classify_clusters(df, 
+                     gamma_max_area=9,
+                     alpha_min_radius=1.0,
+                     alpha_min_roundness=0.9,
+                     beta_max_radius=4.0,
+                     beta_min_dimension=5):
     """
     Classifies clusters using advanced topological metrics.
+    
+    Parameters:
+    -----------
+    df : pd.DataFrame
+        DataFrame with columns: x_pos, y_pos, ToT, arrival_time, Cluster_ID
+    gamma_max_area : float
+        Maximum mask_area for Gamma classification (default: 9)
+    alpha_min_radius : float
+        Minimum max_radius for Alpha classification (default: 1.0)
+    alpha_min_roundness : float
+        Minimum mask_roundness for Alpha classification (default: 0.9)
+    beta_max_radius : float
+        Maximum max_radius for Beta classification (default: 4.0)
+    beta_min_dimension : float
+        Minimum width or height for Beta classification (default: 5)
     """
     print("Calculating basic vector stats...")
 
@@ -137,19 +157,19 @@ def classify_clusters(df):
     def get_class(row):
         # 1. GAMMA: Tiny spots (Low Area)
         # Note: We use mask_area (unique pixels)
-        if row["mask_area"] <= 9:
+        if row["mask_area"] <= gamma_max_area:
             return "Gamma"
 
         # 2. ALPHA: Thick and Round
-        # Thickness Check: Radius must be significant > 1.5 pixels (Diameter > 3px)
-        # Roundness Check: Must be geometrically round > 0.6
-        if row["max_radius"] > 1 and row["mask_roundness"] > 0.6:
+        # Thickness Check: Radius must be significant
+        # Roundness Check: Must be geometrically round
+        if row["max_radius"] > alpha_min_radius and row["mask_roundness"] > alpha_min_roundness:
             return "Alpha"
 
         # 3. BETA: Thin tracks
         # Even if they curl up and look "round" in aspect ratio,
-        # their thickness (max_radius) will remain low (approx 1.0 - 1.5).
-        if row["max_radius"] < 2 and (row["width"] > 5 or row["height"] > 5):
+        # their thickness (max_radius) will remain low.
+        if row["max_radius"] < beta_max_radius and (row["width"] > beta_min_dimension or row["height"] > beta_min_dimension):
             return "Beta"
 
         return "Other"

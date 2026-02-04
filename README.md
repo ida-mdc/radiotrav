@@ -68,6 +68,19 @@ uv run radiotrap process input_events.t3pa output_dir --time-window 100 --spatia
 
 This creates `segmented.txt`, `classification.csv`, `chains.csv`, and `dashboard.html` in the output directory.
 
+**Customizing classification parameters:**
+
+You can adjust the thresholds used for Alpha/Beta/Gamma classification:
+
+```bash
+uv run radiotrap process input_events.t3pa output_dir --time-window 100 \
+  --gamma-max-area 10 \
+  --alpha-min-radius 1.5 \
+  --alpha-min-roundness 0.85 \
+  --beta-max-radius 5.0 \
+  --beta-min-dimension 6
+```
+
 See the [Command Reference](#command-reference) below for all options.
 
 ### 2. Dashboard
@@ -135,6 +148,12 @@ Run the complete pipeline: segmentation, classification, and sequence analysis.
   - `--n-rows [INT]` (default: all): number of rows to process.
   - `--skip-existing-segmentation`: skip segmentation if `segmented.txt` already exists in output directory.
   - `--skip-existing-classification`: skip classification if `classification.csv` already exists in output directory.
+  - **Classification parameters:**
+    - `--gamma-max-area [FLOAT]` (default: `9.0`): maximum mask_area for Gamma classification. Clusters with area ≤ this value are classified as Gamma.
+    - `--alpha-min-radius [FLOAT]` (default: `1.0`): minimum max_radius for Alpha classification. Alpha clusters must have max_radius > this value.
+    - `--alpha-min-roundness [FLOAT]` (default: `0.9`): minimum mask_roundness for Alpha classification. Alpha clusters must have roundness > this value.
+    - `--beta-max-radius [FLOAT]` (default: `4.0`): maximum max_radius for Beta classification. Beta clusters must have max_radius < this value.
+    - `--beta-min-dimension [FLOAT]` (default: `5.0`): minimum width or height for Beta classification. Beta clusters must have width > this OR height > this.
 
 #### `render`
 

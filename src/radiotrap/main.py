@@ -265,10 +265,28 @@ def _run_segment(input_file, output_txt, time_window, spatial_radius, start_row,
     click.echo("Done.")
 
 
-def _run_classify(input_file, output_csv, start_row, n_rows):
+def _run_classify(input_file, output_csv, start_row, n_rows,
+                  gamma_max_area=9,
+                  alpha_min_radius=1.0,
+                  alpha_min_roundness=0.9,
+                  beta_max_radius=4.0,
+                  beta_min_dimension=5):
     """
     Core implementation for classification (no Click dependencies).
     Used by the `process` pipeline.
+    
+    Parameters:
+    -----------
+    gamma_max_area : float
+        Maximum mask_area for Gamma classification (default: 9)
+    alpha_min_radius : float
+        Minimum max_radius for Alpha classification (default: 1.0)
+    alpha_min_roundness : float
+        Minimum mask_roundness for Alpha classification (default: 0.9)
+    beta_max_radius : float
+        Maximum max_radius for Beta classification (default: 4.0)
+    beta_min_dimension : float
+        Minimum width or height for Beta classification (default: 5)
     """
     file_type = detect_file_type(input_file)
     if file_type != "txt":
@@ -347,7 +365,12 @@ def _run_classify(input_file, output_csv, start_row, n_rows):
     })
 
     # Run
-    stats = classify_clusters(df_calc)
+    stats = classify_clusters(df_calc,
+                              gamma_max_area=gamma_max_area,
+                              alpha_min_radius=alpha_min_radius,
+                              alpha_min_roundness=alpha_min_roundness,
+                              beta_max_radius=beta_max_radius,
+                              beta_min_dimension=beta_min_dimension)
 
     # ------------------------------------------------------------------
     # Embed segmentation + classification context as metadata columns.
@@ -751,6 +774,36 @@ def render(input_path, output_file, classification_csv, chains_csv, radiation, s
     is_flag=True,
     help="If set, skip classification if classification.csv already exists in output directory. Useful when classification is expensive and you only want to redo sequence analysis.",
 )
+@click.option(
+    "--gamma-max-area",
+    type=float,
+    default=9.0,
+    help="Maximum mask_area for Gamma classification (default: 9). Clusters with area <= this value are classified as Gamma.",
+)
+@click.option(
+    "--alpha-min-radius",
+    type=float,
+    default=3.0,
+    help="Minimum max_radius for Alpha classification (default: 1.0). Alpha clusters must have max_radius > this value.",
+)
+@click.option(
+    "--alpha-min-roundness",
+    type=float,
+    default=0.85,
+    help="Minimum mask_roundness for Alpha classification (default: 0.9). Alpha clusters must have roundness > this value.",
+)
+@click.option(
+    "--beta-max-radius",
+    type=float,
+    default=4.0,
+    help="Maximum max_radius for Beta classification (default: 4.0). Beta clusters must have max_radius < this value.",
+)
+@click.option(
+    "--beta-min-dimension",
+    type=float,
+    default=5.0,
+    help="Minimum width or height for Beta classification (default: 5.0). Beta clusters must have width > this OR height > this.",
+)
 def process(
     input_file,
     output_dir,
@@ -764,6 +817,11 @@ def process(
     n_rows,
     skip_existing_segmentation,
     skip_existing_classification,
+    gamma_max_area,
+    alpha_min_radius,
+    alpha_min_roundness,
+    beta_max_radius,
+    beta_min_dimension,
 ):
     """
     Full pipeline:
@@ -833,6 +891,11 @@ def process(
             output_csv=str(class_csv),
             start_row=0,
             n_rows=None,
+            gamma_max_area=gamma_max_area,
+            alpha_min_radius=alpha_min_radius,
+            alpha_min_roundness=alpha_min_roundness,
+            beta_max_radius=beta_max_radius,
+            beta_min_dimension=beta_min_dimension,
         )
 
     # 3) SEQUENCE ANALYSIS
