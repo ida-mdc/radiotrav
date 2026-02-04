@@ -23,9 +23,15 @@
     .gallery-item { border: 1px solid rgba(148,163,184,0.35); background: #ffffff; border-radius: 12px; padding: 10px; cursor: pointer; }
     .gallery-item:hover { border-color: rgba(2,132,199,0.55); }
     .gallery-item.selected { background: rgba(2,132,199,0.10); border: 2px solid rgba(2,132,199,0.65); }
+    .gallery-compact { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 2px; }
+    .gallery-compact .gallery-item { border: none; padding: 0; border-radius: 0; background: transparent; overflow: hidden; }
+    .gallery-compact .gallery-item:hover { outline: 2px solid rgba(2,132,199,0.65); outline-offset: -2px; }
+    .gallery-compact .gallery-item.selected { outline: 3px solid rgba(2,132,199,0.85); outline-offset: -3px; background: transparent; }
+    .gallery-compact .gallery-item img { width: 100%; height: 100%; object-fit: cover; display: block; }
     .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
     .thumbnail { image-rendering: pixelated; image-rendering: -moz-crisp-edges; image-rendering: crisp-edges; }
     .viewer-plot-wrap { padding: 8px; }
+    #events-plot-canvas { max-width: 100%; }
   </style>
 </head>
 <body class="min-h-screen">
@@ -53,38 +59,44 @@
             </div>
           </div>
         </div>
+      </div>
 
-        <div class="card p-3 flex flex-col lg:flex-row lg:items-end gap-2 w-full">
-          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-8 gap-1 flex-1">
-            <!-- <div id="global-status" class="text-xs text-slate-600">Waiting for data…</div> -->
+      <!-- Filters -->
+      <div class="card p-3 flex flex-col lg:flex-row lg:items-end gap-2 w-full">
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-8 gap-1 flex-1 items-end">
+          <!-- <div id="global-status" class="text-xs text-slate-600">Waiting for data…</div> -->
 
-            <div id="global-status" class="text-xs text-slate-600 lg:col-span-2">Waiting for data…</div>
+          <div id="global-status" class="text-xs text-slate-600 lg:col-span-2 flex flex-col">
+            <div class="text-[11px] text-slate-300 uppercase mb-1 opacity-0">Status</div>
+            <div>Waiting for data…</div>
+          </div>
 
-            <div>
-              <div class="text-[11px] text-slate-300 uppercase mb-1">Classification</div>
-              <select id="classgal-rad" class="select"></select>
-            </div>
-            <div>
-              <div class="text-[11px] text-slate-300 uppercase mb-1">Sequence pattern filter</div>
-              <input id="seqgal-query" class="input mono" placeholder="e.g. Beta - Alpha" />
-            </div>
-            <div class="flex items-end gap-2">
-              <label class="text-xs text-slate-300 flex items-center gap-2">
-                <input id="seqgal-exact" type="checkbox" />
-                full match
-              </label>
-            </div>
-            <div>
-              <div class="text-[11px] text-slate-300 uppercase mb-1">Max Δt (s)</div>
-              <input id="seqgal-maxdt" class="input mono" type="number" min="0" step="0.001" placeholder="∞" />
-            </div>
-            <div>
-              <div class="text-[11px] text-slate-300 uppercase mb-1">Max Δd (px)</div>
-              <input id="seqgal-maxdist" class="input mono" type="number" min="0" step="0.1" placeholder="∞" />
-            </div>
-            <div class="flex items-end">
-              <button id="viewer-reset" class="btn btn-ghost">Reset filters</button>
-            </div>
+          <div class="flex flex-col">
+            <div class="text-[11px] text-slate-300 uppercase mb-1">Classification</div>
+            <select id="classgal-rad" class="select"></select>
+          </div>
+          <div class="flex flex-col">
+            <div class="text-[11px] text-slate-300 uppercase mb-1">Sequence pattern filter</div>
+            <input id="seqgal-query" class="input mono" placeholder="e.g. Beta - Alpha" />
+          </div>
+          <div class="flex flex-col">
+            <div class="text-[11px] text-slate-300 uppercase mb-1">Match type</div>
+            <label class="text-xs text-slate-300 flex items-center gap-2 h-[32px]">
+              <input id="seqgal-exact" type="checkbox" />
+              full match
+            </label>
+          </div>
+          <div class="flex flex-col">
+            <div class="text-[11px] text-slate-300 uppercase mb-1">Max Δt (s)</div>
+            <input id="seqgal-maxdt" class="input mono" type="number" min="0" step="0.001" placeholder="∞" />
+          </div>
+          <div class="flex flex-col">
+            <div class="text-[11px] text-slate-300 uppercase mb-1">Max Δd (px)</div>
+            <input id="seqgal-maxdist" class="input mono" type="number" min="0" step="0.1" placeholder="∞" />
+          </div>
+          <div class="flex flex-col">
+            <div class="text-[11px] text-slate-300 uppercase mb-1 opacity-0">Reset</div>
+            <button id="viewer-reset" class="btn btn-ghost">Reset filters</button>
           </div>
         </div>
       </div>
@@ -158,7 +170,11 @@
                 <div class="text-sm font-semibold">Classification Gallery</div>
                 <div class="text-xs text-slate-600">Global filter applies. Sorting/limit are local.</div>
               </div>
-              <div class="grid grid-cols-1 md:grid-cols-3 gap-2 w-full lg:w-[720px]">
+              <div class="grid grid-cols-1 md:grid-cols-4 gap-2 w-full lg:w-[800px]">
+                <div>
+                  <div class="text-[11px] text-slate-500 uppercase mb-1">Layout</div>
+                  <button id="classgal-layout" class="btn w-full">Grid</button>
+                </div>
                 <div>
                   <div class="text-[11px] text-slate-500 uppercase mb-1">Sort by</div>
                   <select id="classgal-sort" class="select"></select>
@@ -222,7 +238,11 @@
                 <div class="text-sm font-semibold">Sequence Gallery</div>
                 <div class="text-xs text-slate-600">Global filter applies. Sorting/limit are local.</div>
               </div>
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-2 w-full lg:w-[520px]">
+              <div class="grid grid-cols-1 md:grid-cols-3 gap-2 w-full lg:w-[600px]">
+                <div>
+                  <div class="text-[11px] text-slate-500 uppercase mb-1">Layout</div>
+                  <button id="seqgal-layout" class="btn w-full">Grid</button>
+                </div>
                 <div>
                   <div class="text-[11px] text-slate-500 uppercase mb-1">Sort by</div>
                   <select id="seqgal-sort" class="select">
@@ -250,7 +270,7 @@
       </div>
 
       <!-- RIGHT: Viewer -->
-      <div class="card p-4 lg:sticky lg:top-4 self-start">
+      <div class="card p-4 lg:sticky lg:top-4 self-start w-full lg:min-w-[500px] overflow-x-hidden">
         <div class="flex flex-col gap-2 mb-3">
           <div>
             <div class="text-sm font-semibold">Event Viewer</div>
@@ -259,26 +279,26 @@
         </div>
 
         <!-- Viewer layout: plot left, controls right -->
-        <div class="flex gap-4">
+        <div class="flex flex-col xl:flex-row gap-4 min-w-0">
           <!-- Plot (smaller, on left) -->
-          <div class="viewer-plot-wrap flex-shrink-0">
-            <canvas id="events-plot-canvas" style="width: 400px; height: 400px; display: block; background: #000000;"></canvas>
+          <div class="viewer-plot-wrap overflow-hidden w-full xl:w-auto xl:flex-shrink-0 flex justify-center xl:justify-start">
+            <canvas id="events-plot-canvas" style="width: 400px; height: 400px; display: block; background: #000000; max-width: 100%;"></canvas>
             <div id="events-plot" style="display: none;"></div>
           </div>
 
           <!-- Controls (on right) -->
-          <div class="flex flex-col gap-3 flex-1 min-w-0">
-            <div class="flex items-center gap-2">
-              <div class="text-xs text-slate-600">View</div>
-              <select id="viewer-view" class="select text-xs">
+          <div class="flex flex-col gap-3 flex-1 min-w-0 overflow-x-hidden">
+            <div class="flex items-center gap-2 min-w-0">
+              <div class="text-xs text-slate-600 flex-shrink-0">View</div>
+              <select id="viewer-view" class="select text-xs flex-1 min-w-0">
                 <option value="animated" selected>Animated</option>
                 <option value="max">Max projection</option>
               </select>
             </div>
             
-            <div class="flex items-center gap-2">
-              <div class="text-xs text-slate-600">Mode</div>
-              <select id="viewer-mode" class="select text-xs">
+            <div class="flex items-center gap-2 min-w-0">
+              <div class="text-xs text-slate-600 flex-shrink-0">Mode</div>
+              <select id="viewer-mode" class="select text-xs flex-1 min-w-0">
                 <option value="classification">Classification</option>
                 <option value="energy">Energy (ToT)</option>
                 <option value="density">Density</option>
@@ -286,27 +306,27 @@
               </select>
             </div>
 
-            <div class="flex items-center gap-2">
+            <div class="flex items-center gap-2 min-w-0">
               <button id="viewer-playBtn" class="btn">Play</button>
               <button id="viewer-resetBtn" class="btn btn-ghost">Reset</button>
             </div>
 
-            <div class="flex items-center gap-2">
-              <div class="text-xs text-slate-600">Speed</div>
-              <input id="viewer-speed" type="range" min="0" max="2" step="0.05" value="1" class="flex-1" />
-              <div id="viewer-speedLabel" class="text-xs mono text-slate-600 w-12">1.0×</div>
+            <div class="flex items-center gap-2 min-w-0">
+              <div class="text-xs text-slate-600 flex-shrink-0">Speed</div>
+              <input id="viewer-speed" type="range" min="0" max="2" step="0.05" value="1" class="flex-1 min-w-0" />
+              <div id="viewer-speedLabel" class="text-xs mono text-slate-600 w-12 flex-shrink-0">1.0×</div>
             </div>
 
-            <div class="flex items-center gap-2">
-              <div class="text-xs text-slate-600">Time center</div>
-              <input id="viewer-tCenter" type="range" min="0" max="1" step="0.001" value="0" class="flex-1" />
-              <div id="viewer-tCenterLabel" class="text-xs mono text-slate-600 w-12">-</div>
+            <div class="flex items-center gap-2 min-w-0">
+              <div class="text-xs text-slate-600 flex-shrink-0">Time center</div>
+              <input id="viewer-tCenter" type="range" min="0" max="1" step="0.001" value="0" class="flex-1 min-w-0" />
+              <div id="viewer-tCenterLabel" class="text-xs mono text-slate-600 w-12 flex-shrink-0">-</div>
             </div>
 
-            <div class="flex items-center gap-2">
-              <div class="text-xs text-slate-600">Window size</div>
-              <input id="viewer-winSize" type="range" min="1" max="1000000" step="1" value="1000000" class="flex-1" />
-              <div id="viewer-winLabel" class="text-xs mono text-slate-600 w-12">-</div>
+            <div class="flex items-center gap-2 min-w-0">
+              <div class="text-xs text-slate-600 flex-shrink-0">Window size</div>
+              <input id="viewer-winSize" type="range" min="1" max="1000000" step="1" value="1000000" class="flex-1 min-w-0" />
+              <div id="viewer-winLabel" class="text-xs mono text-slate-600 w-12 flex-shrink-0">-</div>
             </div>
 
             <!-- Stats and legend -->
@@ -536,6 +556,7 @@
         classSortKey: "Cluster_ID",
         classSortDir: "desc",
         classLimit: 30,
+        classLayoutMode: "grid", // "grid" | "compact"
         // sequence gallery
         seqQuery: "",
         seqExact: false,
@@ -543,6 +564,7 @@
         seqMaxDist: null,   // px
         seqSortKey: "count",
         seqLimit: 30,
+        seqLayoutMode: "grid", // "grid" | "compact"
       },
       selection: {
         clusterId: null,
@@ -1098,6 +1120,12 @@
       sortSel.value = AppState.filters.classSortKey;
       sortSel.onchange = (e) => { AppState.filters.classSortKey = e.target.value; renderClassGallery(); renderViewer(); };
 
+      // Layout toggle
+      const layoutBtn = document.getElementById("classgal-layout");
+      function syncLayoutBtn() { layoutBtn.textContent = AppState.filters.classLayoutMode === "grid" ? "Grid" : "Compact"; }
+      syncLayoutBtn();
+      layoutBtn.onclick = () => { AppState.filters.classLayoutMode = AppState.filters.classLayoutMode === "grid" ? "compact" : "grid"; syncLayoutBtn(); renderClassGallery(); };
+
       // Direction toggle
       const dirBtn = document.getElementById("classgal-dir");
       function syncDirBtn() { dirBtn.textContent = AppState.filters.classSortDir === "asc" ? "↑ Asc" : "↓ Desc"; }
@@ -1372,6 +1400,14 @@
       const sorted = sortRows(filtered, AppState.filters.classSortKey, AppState.filters.classSortDir);
       const limit = AppState.filters.classLimit;
       const shown = sorted.slice(0, limit);
+      const isCompact = AppState.filters.classLayoutMode === "compact";
+
+      // Update grid class for layout mode
+      if (isCompact) {
+        grid.className = "gallery-compact";
+      } else {
+        grid.className = "grid md:grid-cols-2 xl:grid-cols-3 gap-3";
+      }
 
       status.textContent = `Filtered: ${fmt(filtered.length)} | showing first ${fmt(shown.length)} (sorted by ${AppState.filters.classSortKey} ${AppState.filters.classSortDir}).`;
 
@@ -1384,15 +1420,25 @@
         el.className = "gallery-item";
         if (AppState.selection.clusterId && String(AppState.selection.clusterId) === String(cid)) el.classList.add("selected");
 
-        const thumbnailHtml = thumbnail ? `<img src="${thumbnail}" alt="Cluster ${cid}" class="thumbnail w-full h-auto rounded border border-slate-300" style="max-height: 90px; object-fit: contain;" />` : "";
-
-        el.innerHTML = `
-          ${thumbnailHtml}
-          <div class="flex items-center justify-between gap-2 mt-2">
-            <div class="text-sm font-semibold">Cluster ${cid}</div>
-            <div class="text-xs"><span class="chip">${rad}</span></div>
-          </div>
-        `;
+        if (isCompact) {
+          // Compact layout: just the image, no borders, no text
+          if (thumbnail) {
+            el.innerHTML = `<img src="${thumbnail}" alt="Cluster ${cid}" class="thumbnail" />`;
+            el.style.aspectRatio = "1";
+          } else {
+            el.innerHTML = `<div style="aspect-ratio: 1; background: rgba(148,163,184,0.2);"></div>`;
+          }
+        } else {
+          // Grid layout: image with text labels
+          const thumbnailHtml = thumbnail ? `<img src="${thumbnail}" alt="Cluster ${cid}" class="thumbnail w-full h-auto rounded border border-slate-300" style="max-height: 90px; object-fit: contain;" />` : "";
+          el.innerHTML = `
+            ${thumbnailHtml}
+            <div class="flex items-center justify-between gap-2 mt-2">
+              <div class="text-sm font-semibold">Cluster ${cid}</div>
+              <div class="text-xs"><span class="chip">${rad}</span></div>
+            </div>
+          `;
+        }
 
         el.onclick = () => {
           AppState.selection.clusterId = cid;
@@ -1590,6 +1636,14 @@
       const filteredChains = getSequenceFilteredChains();
       const sortKey = AppState.filters.seqSortKey;
       const limit = AppState.filters.seqLimit;
+      const isCompact = AppState.filters.seqLayoutMode === "compact";
+
+      // Update grid class for layout mode
+      if (isCompact) {
+        grid.className = "gallery-compact";
+      } else {
+        grid.className = "grid md:grid-cols-2 xl:grid-cols-3 gap-3";
+      }
 
       // If filter is active, show individual chains; otherwise show aggregated patterns
       if (filteredChains !== null && filteredChains.length > 0) {
@@ -1612,88 +1666,106 @@
           if (selected) el.classList.add("selected");
 
           const chain = chainData.chain;
-          let thumbnailsHtml = "";
-          let timeDistHtml = "";
 
-          if (chain && chain.length > 0) {
-            // Show thumbnails in sequence
-            thumbnailsHtml = '<div class="flex gap-2 mb-2 flex-wrap items-center">';
-            for (let i = 0; i < chain.length; i++) {
-              const item = chain[i];
-              const thumb = getField(item, ["Thumbnail", "thumbnail_png", "thumbnail"]);
-              const cls = getField(item, ["Class", "class"]) || "?";
-              
-              // Show thumbnail or placeholder
+          if (isCompact) {
+            // Compact layout: show first thumbnail only, no text
+            if (chain && chain.length > 0) {
+              const firstItem = chain[0];
+              const thumb = getField(firstItem, ["Thumbnail", "thumbnail_png", "thumbnail"]);
               if (thumb) {
-                thumbnailsHtml += `<div class="flex flex-col items-center gap-1">
-                  <img src="${thumb}" alt="${cls}" class="thumbnail w-16 h-16 border border-slate-700 rounded" style="object-fit: contain;" />
-                  <span class="text-[10px] text-slate-500">${cls}</span>
-                </div>`;
+                el.innerHTML = `<img src="${thumb}" alt="Chain" class="thumbnail" />`;
+                el.style.aspectRatio = "1";
               } else {
-                thumbnailsHtml += `<div class="flex flex-col items-center gap-1">
-                  <div class="w-16 h-16 border border-slate-700 rounded bg-slate-800 flex items-center justify-center">
-                    <span class="text-xs text-slate-500">${cls}</span>
-                  </div>
-                  <span class="text-[10px] text-slate-500">${cls}</span>
-                </div>`;
+                el.innerHTML = `<div style="aspect-ratio: 1; background: rgba(148,163,184,0.2);"></div>`;
               }
-              
-              // Add arrow and time/distance between items (except last)
-              if (i < chain.length - 1) {
-                const nextItem = chain[i + 1];
-                const nextTimeDelta = getField(nextItem, ["Time_Delta", "time_delta", "TimeDelta"]);
-                const nextDistDelta = getField(nextItem, ["Dist_Delta", "dist_delta", "DistDelta"]);
-                
-                const dt = isFiniteNumber(nextTimeDelta) ? Number(nextTimeDelta) : null;
-                const dd = isFiniteNumber(nextDistDelta) ? Number(nextDistDelta) : null;
-                
-                thumbnailsHtml += `<div class="flex flex-col items-center justify-center text-[10px] text-slate-500 px-1 min-w-[50px]">
-                  <div class="text-slate-500">→</div>
-                  ${dt != null ? `<div class="text-slate-500 mono">${dt.toExponential(2)}s</div>` : ''}
-                  ${dd != null ? `<div class="text-slate-500 mono">${dd.toFixed(1)}px</div>` : ''}
-                </div>`;
-              }
+            } else {
+              el.innerHTML = `<div style="aspect-ratio: 1; background: rgba(148,163,184,0.2);"></div>`;
             }
-            thumbnailsHtml += '</div>';
+          } else {
+            // Grid layout: show full chain with text
+            let thumbnailsHtml = "";
+            let timeDistHtml = "";
 
-            // Summary time/distance info
-            const timeDeltas = [];
-            const distDeltas = [];
-            for (let i = 1; i < chain.length; i++) {
-              const item = chain[i];
-              const dt = getField(item, ["Time_Delta", "time_delta", "TimeDelta"]);
-              const dd = getField(item, ["Dist_Delta", "dist_delta", "DistDelta"]);
-              if (isFiniteNumber(dt)) timeDeltas.push(Number(dt));
-              if (isFiniteNumber(dd)) distDeltas.push(Number(dd));
-            }
-            
-            if (timeDeltas.length > 0 || distDeltas.length > 0) {
-              const avgTime = timeDeltas.length > 0 ? timeDeltas.reduce((a,b) => a+b, 0) / timeDeltas.length : null;
-              const avgDist = distDeltas.length > 0 ? distDeltas.reduce((a,b) => a+b, 0) / distDeltas.length : null;
-              const totalTime = timeDeltas.reduce((a,b) => a+b, 0);
-              const totalDist = distDeltas.reduce((a,b) => a+b, 0);
+            if (chain && chain.length > 0) {
+              // Show thumbnails in sequence
+              thumbnailsHtml = '<div class="flex gap-2 mb-2 flex-wrap items-center">';
+              for (let i = 0; i < chain.length; i++) {
+                const item = chain[i];
+                const thumb = getField(item, ["Thumbnail", "thumbnail_png", "thumbnail"]);
+                const cls = getField(item, ["Class", "class"]) || "?";
+                
+                // Show thumbnail or placeholder
+                if (thumb) {
+                  thumbnailsHtml += `<div class="flex flex-col items-center gap-1">
+                    <img src="${thumb}" alt="${cls}" class="thumbnail w-16 h-16 border border-slate-700 rounded" style="object-fit: contain;" />
+                    <span class="text-[10px] text-slate-500">${cls}</span>
+                  </div>`;
+                } else {
+                  thumbnailsHtml += `<div class="flex flex-col items-center gap-1">
+                    <div class="w-16 h-16 border border-slate-700 rounded bg-slate-800 flex items-center justify-center">
+                      <span class="text-xs text-slate-500">${cls}</span>
+                    </div>
+                    <span class="text-[10px] text-slate-500">${cls}</span>
+                  </div>`;
+                }
+                
+                // Add arrow and time/distance between items (except last)
+                if (i < chain.length - 1) {
+                  const nextItem = chain[i + 1];
+                  const nextTimeDelta = getField(nextItem, ["Time_Delta", "time_delta", "TimeDelta"]);
+                  const nextDistDelta = getField(nextItem, ["Dist_Delta", "dist_delta", "DistDelta"]);
+                  
+                  const dt = isFiniteNumber(nextTimeDelta) ? Number(nextTimeDelta) : null;
+                  const dd = isFiniteNumber(nextDistDelta) ? Number(nextDistDelta) : null;
+                  
+                  thumbnailsHtml += `<div class="flex flex-col items-center justify-center text-[10px] text-slate-500 px-1 min-w-[50px]">
+                    <div class="text-slate-500">→</div>
+                    ${dt != null ? `<div class="text-slate-500 mono">${dt.toExponential(2)}s</div>` : ''}
+                    ${dd != null ? `<div class="text-slate-500 mono">${dd.toFixed(1)}px</div>` : ''}
+                  </div>`;
+                }
+              }
+              thumbnailsHtml += '</div>';
+
+              // Summary time/distance info
+              const timeDeltas = [];
+              const distDeltas = [];
+              for (let i = 1; i < chain.length; i++) {
+                const item = chain[i];
+                const dt = getField(item, ["Time_Delta", "time_delta", "TimeDelta"]);
+                const dd = getField(item, ["Dist_Delta", "dist_delta", "DistDelta"]);
+                if (isFiniteNumber(dt)) timeDeltas.push(Number(dt));
+                if (isFiniteNumber(dd)) distDeltas.push(Number(dd));
+              }
               
-              timeDistHtml = '<div class="text-xs text-slate-300 mt-2 space-y-1">';
-              if (avgTime != null) {
-                timeDistHtml += `<div>Avg time gap: <span class="mono text-slate-200">${avgTime.toExponential(2)}s</span></div>`;
+              if (timeDeltas.length > 0 || distDeltas.length > 0) {
+                const avgTime = timeDeltas.length > 0 ? timeDeltas.reduce((a,b) => a+b, 0) / timeDeltas.length : null;
+                const avgDist = distDeltas.length > 0 ? distDeltas.reduce((a,b) => a+b, 0) / distDeltas.length : null;
+                const totalTime = timeDeltas.reduce((a,b) => a+b, 0);
+                const totalDist = distDeltas.reduce((a,b) => a+b, 0);
+                
+                timeDistHtml = '<div class="text-xs text-slate-300 mt-2 space-y-1">';
+                if (avgTime != null) {
+                  timeDistHtml += `<div>Avg time gap: <span class="mono text-slate-200">${avgTime.toExponential(2)}s</span></div>`;
+                }
+                if (avgDist != null) {
+                  timeDistHtml += `<div>Avg distance: <span class="mono text-slate-200">${avgDist.toFixed(2)}px</span></div>`;
+                }
+                if (timeDeltas.length > 1) {
+                  timeDistHtml += `<div>Total time: <span class="mono text-slate-200">${totalTime.toExponential(2)}s</span></div>`;
+                }
+                if (distDeltas.length > 1) {
+                  timeDistHtml += `<div>Total distance: <span class="mono text-slate-200">${totalDist.toFixed(2)}px</span></div>`;
+                }
+                timeDistHtml += '</div>';
               }
-              if (avgDist != null) {
-                timeDistHtml += `<div>Avg distance: <span class="mono text-slate-200">${avgDist.toFixed(2)}px</span></div>`;
-              }
-              if (timeDeltas.length > 1) {
-                timeDistHtml += `<div>Total time: <span class="mono text-slate-200">${totalTime.toExponential(2)}s</span></div>`;
-              }
-              if (distDeltas.length > 1) {
-                timeDistHtml += `<div>Total distance: <span class="mono text-slate-200">${totalDist.toFixed(2)}px</span></div>`;
-              }
-              timeDistHtml += '</div>';
             }
+
+            el.innerHTML = `
+              <div class="text-sm font-semibold mono mb-2">${chainData.signature}</div>
+              ${thumbnailsHtml}
+            `;
           }
-
-          el.innerHTML = `
-            <div class="text-sm font-semibold mono mb-2">${chainData.signature}</div>
-            ${thumbnailsHtml}
-          `;
 
           el.onclick = () => {
             AppState.selection.chainId = chainData.chainId;
@@ -1727,89 +1799,107 @@
 
         // Get example chain to show thumbnails and time/distance info
         const exampleChain = Store.chains.byChainId[p.exampleChainId];
-        let thumbnailsHtml = "";
-        let timeDistHtml = "";
 
-        if (exampleChain && exampleChain.length > 0) {
-          // Show thumbnails in sequence
-          thumbnailsHtml = '<div class="flex gap-2 mb-2 flex-wrap items-center">';
-          for (let i = 0; i < exampleChain.length; i++) {
-            const item = exampleChain[i];
-            const thumb = getField(item, ["Thumbnail", "thumbnail_png", "thumbnail"]);
-            const cls = getField(item, ["Class", "class"]) || "?";
-            
-            // Show thumbnail or placeholder
+        if (isCompact) {
+          // Compact layout: show first thumbnail only, no text
+          if (exampleChain && exampleChain.length > 0) {
+            const firstItem = exampleChain[0];
+            const thumb = getField(firstItem, ["Thumbnail", "thumbnail_png", "thumbnail"]);
             if (thumb) {
-              thumbnailsHtml += `<div class="flex flex-col items-center gap-1">
-                <img src="${thumb}" alt="${cls}" class="thumbnail w-16 h-16 border border-slate-700 rounded" style="object-fit: contain;" />
-                <span class="text-[10px] text-slate-500">${cls}</span>
-              </div>`;
+              el.innerHTML = `<img src="${thumb}" alt="Pattern" class="thumbnail" />`;
+              el.style.aspectRatio = "1";
             } else {
-              thumbnailsHtml += `<div class="flex flex-col items-center gap-1">
-                <div class="w-16 h-16 border border-slate-700 rounded bg-slate-800 flex items-center justify-center">
-                  <span class="text-xs text-slate-500">${cls}</span>
-                </div>
-                <span class="text-[10px] text-slate-500">${cls}</span>
-              </div>`;
+              el.innerHTML = `<div style="aspect-ratio: 1; background: rgba(148,163,184,0.2);"></div>`;
             }
-            
-            // Add arrow and time/distance between items (except last)
-            if (i < exampleChain.length - 1) {
-              const nextItem = exampleChain[i + 1];
-              const nextTimeDelta = getField(nextItem, ["Time_Delta", "time_delta", "TimeDelta"]);
-              const nextDistDelta = getField(nextItem, ["Dist_Delta", "dist_delta", "DistDelta"]);
-              
-              // Use the next item's delta (which is the gap from current to next)
-              const dt = isFiniteNumber(nextTimeDelta) ? Number(nextTimeDelta) : null;
-              const dd = isFiniteNumber(nextDistDelta) ? Number(nextDistDelta) : null;
-              
-              thumbnailsHtml += `<div class="flex flex-col items-center justify-center text-[10px] text-slate-500 px-1 min-w-[50px]">
-                <div class="text-slate-500">→</div>
-                ${dt != null ? `<div class="text-slate-500 mono">${dt.toExponential(2)}s</div>` : ''}
-                ${dd != null ? `<div class="text-slate-500 mono">${dd.toFixed(1)}px</div>` : ''}
-              </div>`;
-            }
+          } else {
+            el.innerHTML = `<div style="aspect-ratio: 1; background: rgba(148,163,184,0.2);"></div>`;
           }
-          thumbnailsHtml += '</div>';
+        } else {
+          // Grid layout: show full chain with text
+          let thumbnailsHtml = "";
+          let timeDistHtml = "";
 
-          // Summary time/distance info
-          const timeDeltas = [];
-          const distDeltas = [];
-          for (let i = 1; i < exampleChain.length; i++) {
-            const item = exampleChain[i];
-            const dt = getField(item, ["Time_Delta", "time_delta", "TimeDelta"]);
-            const dd = getField(item, ["Dist_Delta", "dist_delta", "DistDelta"]);
-            if (isFiniteNumber(dt)) timeDeltas.push(Number(dt));
-            if (isFiniteNumber(dd)) distDeltas.push(Number(dd));
-          }
-          
-          if (timeDeltas.length > 0 || distDeltas.length > 0) {
-            const avgTime = timeDeltas.length > 0 ? timeDeltas.reduce((a,b) => a+b, 0) / timeDeltas.length : null;
-            const avgDist = distDeltas.length > 0 ? distDeltas.reduce((a,b) => a+b, 0) / distDeltas.length : null;
-            const totalTime = timeDeltas.reduce((a,b) => a+b, 0);
-            const totalDist = distDeltas.reduce((a,b) => a+b, 0);
+          if (exampleChain && exampleChain.length > 0) {
+            // Show thumbnails in sequence
+            thumbnailsHtml = '<div class="flex gap-2 mb-2 flex-wrap items-center">';
+            for (let i = 0; i < exampleChain.length; i++) {
+              const item = exampleChain[i];
+              const thumb = getField(item, ["Thumbnail", "thumbnail_png", "thumbnail"]);
+              const cls = getField(item, ["Class", "class"]) || "?";
+              
+              // Show thumbnail or placeholder
+              if (thumb) {
+                thumbnailsHtml += `<div class="flex flex-col items-center gap-1">
+                  <img src="${thumb}" alt="${cls}" class="thumbnail w-16 h-16 border border-slate-700 rounded" style="object-fit: contain;" />
+                  <span class="text-[10px] text-slate-500">${cls}</span>
+                </div>`;
+              } else {
+                thumbnailsHtml += `<div class="flex flex-col items-center gap-1">
+                  <div class="w-16 h-16 border border-slate-700 rounded bg-slate-800 flex items-center justify-center">
+                    <span class="text-xs text-slate-500">${cls}</span>
+                  </div>
+                  <span class="text-[10px] text-slate-500">${cls}</span>
+                </div>`;
+              }
+              
+              // Add arrow and time/distance between items (except last)
+              if (i < exampleChain.length - 1) {
+                const nextItem = exampleChain[i + 1];
+                const nextTimeDelta = getField(nextItem, ["Time_Delta", "time_delta", "TimeDelta"]);
+                const nextDistDelta = getField(nextItem, ["Dist_Delta", "dist_delta", "DistDelta"]);
+                
+                // Use the next item's delta (which is the gap from current to next)
+                const dt = isFiniteNumber(nextTimeDelta) ? Number(nextTimeDelta) : null;
+                const dd = isFiniteNumber(nextDistDelta) ? Number(nextDistDelta) : null;
+                
+                thumbnailsHtml += `<div class="flex flex-col items-center justify-center text-[10px] text-slate-500 px-1 min-w-[50px]">
+                  <div class="text-slate-500">→</div>
+                  ${dt != null ? `<div class="text-slate-500 mono">${dt.toExponential(2)}s</div>` : ''}
+                  ${dd != null ? `<div class="text-slate-500 mono">${dd.toFixed(1)}px</div>` : ''}
+                </div>`;
+              }
+            }
+            thumbnailsHtml += '</div>';
+
+            // Summary time/distance info
+            const timeDeltas = [];
+            const distDeltas = [];
+            for (let i = 1; i < exampleChain.length; i++) {
+              const item = exampleChain[i];
+              const dt = getField(item, ["Time_Delta", "time_delta", "TimeDelta"]);
+              const dd = getField(item, ["Dist_Delta", "dist_delta", "DistDelta"]);
+              if (isFiniteNumber(dt)) timeDeltas.push(Number(dt));
+              if (isFiniteNumber(dd)) distDeltas.push(Number(dd));
+            }
             
-            timeDistHtml = '<div class="text-xs text-slate-300 mt-2 space-y-1">';
-            if (avgTime != null) {
-              timeDistHtml += `<div>Avg time gap: <span class="mono text-slate-200">${avgTime.toExponential(2)}s</span></div>`;
+            if (timeDeltas.length > 0 || distDeltas.length > 0) {
+              const avgTime = timeDeltas.length > 0 ? timeDeltas.reduce((a,b) => a+b, 0) / timeDeltas.length : null;
+              const avgDist = distDeltas.length > 0 ? distDeltas.reduce((a,b) => a+b, 0) / distDeltas.length : null;
+              const totalTime = timeDeltas.reduce((a,b) => a+b, 0);
+              const totalDist = distDeltas.reduce((a,b) => a+b, 0);
+              
+              timeDistHtml = '<div class="text-xs text-slate-300 mt-2 space-y-1">';
+              if (avgTime != null) {
+                timeDistHtml += `<div>Avg time gap: <span class="mono text-slate-200">${avgTime.toExponential(2)}s</span></div>`;
+              }
+              if (avgDist != null) {
+                timeDistHtml += `<div>Avg distance: <span class="mono text-slate-200">${avgDist.toFixed(2)}px</span></div>`;
+              }
+              if (timeDeltas.length > 1) {
+                timeDistHtml += `<div>Total time: <span class="mono text-slate-200">${totalTime.toExponential(2)}s</span></div>`;
+              }
+              if (distDeltas.length > 1) {
+                timeDistHtml += `<div>Total distance: <span class="mono text-slate-200">${totalDist.toFixed(2)}px</span></div>`;
+              }
+              timeDistHtml += '</div>';
             }
-            if (avgDist != null) {
-              timeDistHtml += `<div>Avg distance: <span class="mono text-slate-200">${avgDist.toFixed(2)}px</span></div>`;
-            }
-            if (timeDeltas.length > 1) {
-              timeDistHtml += `<div>Total time: <span class="mono text-slate-200">${totalTime.toExponential(2)}s</span></div>`;
-            }
-            if (distDeltas.length > 1) {
-              timeDistHtml += `<div>Total distance: <span class="mono text-slate-200">${totalDist.toFixed(2)}px</span></div>`;
-            }
-            timeDistHtml += '</div>';
           }
+
+          el.innerHTML = `
+            <div class="text-sm font-semibold mono mb-2">${p.sig}</div>
+            ${thumbnailsHtml}
+          `;
         }
-
-        el.innerHTML = `
-          <div class="text-sm font-semibold mono mb-2">${p.sig}</div>
-          ${thumbnailsHtml}
-        `;
 
         el.onclick = () => {
           AppState.selection.pattern = p.sig;
@@ -1857,6 +1947,12 @@
       renderClassPlots();
       renderViewer();
     });
+    // Layout toggle for sequence gallery
+    const seqLayoutBtn = document.getElementById("seqgal-layout");
+    function syncSeqLayoutBtn() { seqLayoutBtn.textContent = AppState.filters.seqLayoutMode === "grid" ? "Grid" : "Compact"; }
+    syncSeqLayoutBtn();
+    seqLayoutBtn.onclick = () => { AppState.filters.seqLayoutMode = AppState.filters.seqLayoutMode === "grid" ? "compact" : "grid"; syncSeqLayoutBtn(); renderSeqGallery(); };
+
     document.getElementById("seqgal-sort").addEventListener("change", (e) => {
       AppState.filters.seqSortKey = e.target.value;
       renderSeqGallery();
