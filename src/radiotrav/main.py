@@ -910,21 +910,7 @@ def process(
         pattern_lookup_file=sequence_pattern_lookup,
     )
 
-    # 4) Copy HTML dashboard into output folder
-    click.echo("Copying HTML dashboard into output folder...")
-    project_root = Path(__file__).resolve().parents[2]
-    report_dir = project_root / "report"
-    dashboard_src = report_dir / "dashboard.html"
-
-    try:
-        dashboard_dst = out_dir / "dashboard.html"
-        with dashboard_src.open("r", encoding="utf-8") as f_in, dashboard_dst.open("w", encoding="utf-8") as f_out:
-            f_out.write(f_in.read())
-        click.echo(f"Dashboard copied to {dashboard_dst}")
-    except FileNotFoundError:
-        click.echo(f"Warning: Dashboard template not found: {dashboard_src}")
-
-    click.echo("Done. Open dashboard.html in a browser and load the generated CSV files.")
+    click.echo("Done. Open docs/dashboard/index.html from the RadioTRAC folder in a browser and load the generated CSV files.")
 
 if __name__ == "__main__":
     cli()

@@ -66,7 +66,7 @@ Run the complete pipeline (segmentation, classification, and sequence analysis):
 uv run radiotrav process input_events.t3pa output_dir --time-window 100 --spatial-radius 2
 ```
 
-This creates `segmented.txt`, `classification.csv`, `chains.csv`, and `dashboard.html` in the output directory.
+This creates `segmented.txt`, `classification.csv`, and `chains.csv` in the output directory.
 
 **Customizing classification parameters:**
 
@@ -85,7 +85,7 @@ See the [Command Reference](#command-reference) below for all options.
 
 ### 2. Dashboard
 
-Open `report/dashboard.html` in your web browser (this file is also copied to the output directory for portability). Load the three generated files from your output directory:
+Open `docs/dashboard/index.html` in your web browser. Load the three generated files from your output directory:
 - **segmented.txt** - Events with cluster assignments
 - **classification.csv** - Classification results
 - **chains.csv** - Sequence/chain analysis results

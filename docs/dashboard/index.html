@@ -38,7 +38,11 @@
   </style>
 </head>
 <body class="min-h-screen">
-  <div class="w-full px-4 py-5">
+<div id="loading-overlay" class="fixed inset-0 bg-slate-50/90 z-50 flex flex-col items-center justify-center hidden">
+  <div class="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-3"></div>
+  <div id="loading-text" class="text-sm font-semibold text-slate-700">Loading data...</div>
+</div>
+<div class="w-full px-4 py-5">
     <!-- Header -->
     <div class="flex flex-col gap-3 mb-4">
       <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
@@ -3671,38 +3675,133 @@
       renderViewer();
     }
 
-    window.addEventListener("DOMContentLoaded", () => {
+    // Load CSV from URL
+    async function loadCSVFromURL(url) {
+        const status = document.getElementById('status');
+        status.textContent = `Loading data from ${url}...`;
+
+        try {
+            // Handle both absolute and relative URLs
+            let fetchUrl = url;
+            try {
+                // Try to create URL object - will fail for relative URLs
+                new URL(url);
+            } catch (e) {
+                // If it's a relative URL, resolve it relative to current page
+                fetchUrl = new URL(url, window.location.href).href;
+            }
+
+            const response = await fetch(fetchUrl);
+            if (!response.ok) {
+                throw new Error(`Failed to load CSV: ${response.status} ${response.statusText}`);
+            }
+            const csvText = await response.text();
+
+            // Extract filename from URL for display
+            try {
+                const urlObj = new URL(fetchUrl);
+                const filename = urlObj.pathname.split('/').pop() || 'remote file';
+                loadAndRender(csvText, filename);
+            } catch (e) {
+                // Fallback if URL parsing fails
+                const filename = url.split('/').pop() || 'remote file';
+                loadAndRender(csvText, filename);
+            }
+        } catch (e) {
+            console.error(e);
+            status.textContent = "Error loading CSV from URL: " + e.message;
+        }
+    }
+
+    // =====================================================================================
+    // URL Parameter Loading & Startup
+    // =====================================================================================
+
+    const loadingOverlay = document.getElementById("loading-overlay");
+    const loadingText = document.getElementById("loading-text");
+
+    function showLoading(msg) {
+      if (loadingText) loadingText.textContent = msg;
+      if (loadingOverlay) loadingOverlay.classList.remove("hidden");
+    }
+
+    function hideLoading() {
+      if (loadingOverlay) loadingOverlay.classList.add("hidden");
+    }
+
+    async function checkURLParameters() {
+      const urlParams = new URLSearchParams(window.location.search);
+
+      const dataUrlSegmentation = urlParams.get('segmentation');
+      const dataUrlClassification = urlParams.get('classification');
+      const dataUrlChains = urlParams.get('chains');
+
+      // If no params are present, just return and let user upload manually
+      if (!dataUrlSegmentation && !dataUrlClassification && !dataUrlChains) {
+        return;
+      }
+
+      showLoading("Initializing remote data...");
+
+      try {
+        // 1. Load Segmentation (Events)
+        if (dataUrlSegmentation) {
+          showLoading("Downloading segmentation data (this may take a moment)...");
+          const txt = await autoLoadText(dataUrlSegmentation);
+          await loadEventsFromText(txt);
+        }
+
+        // 2. Load Classification
+        if (dataUrlClassification) {
+          showLoading("Downloading classification data...");
+          const txt = await autoLoadText(dataUrlClassification);
+          await loadClassificationFromText(txt);
+        }
+
+        // 3. Load Chains
+        if (dataUrlChains) {
+          showLoading("Downloading sequence chains...");
+          const txt = await autoLoadText(dataUrlChains);
+          await loadChainsFromText(txt);
+        }
+      } catch (err) {
+        console.error("Remote loading error:", err);
+        alert(`Error loading remote files:\n${err.message}\n\nCheck the console (F12) for network/CORS details.`);
+      } finally {
+        updateGlobalStatus();
+        hideLoading();
+      }
+    }
+
+    // Startup Logic
+    window.addEventListener("DOMContentLoaded", async () => {
       showTab("class-plots");
-      tryAutoLoad();
+
+      // Initialize viewer defaults
       setViewerControlsForView();
-      
-      // Initialize colormap selector visibility
+
+      // Initialize colormap visibility
       const colormapContainer = document.getElementById("viewer-colormap-container");
-      const mode = AppState.viewer.mode || "classification";
-      if (mode === "energy" || mode === "density" || mode === "time") {
+      if (AppState.viewer.mode === "energy" || AppState.viewer.mode === "density" || AppState.viewer.mode === "time") {
         colormapContainer.style.display = "flex";
       } else {
         colormapContainer.style.display = "none";
       }
-      
-      // Initialize colormap selector value
-      const colormapSelect = document.getElementById("viewer-colormap");
-      colormapSelect.value = AppState.viewer.colormap || "turbo";
+      document.getElementById("viewer-colormap").value = AppState.viewer.colormap || "turbo";
 
-      // Resize Plotly plots when layout changes (prevents clipped labels after scrolling/resizing)
+      // Initialize empty controls
+      initClassificationControls();
+
+      // Check for URL parameters and load data if present
+      await checkURLParameters();
+
+      // Resize listener
       window.addEventListener("resize", () => {
         try {
           ["events-plot","class-plot-counts","class-plot-energy","class-plot-radius","seq-patterns","seq-lengths","seq-time-deltas"]
-            .forEach(id => { 
-              try { 
-                const el = document.getElementById(id);
-                // Only resize if element exists and is visible
-                if (el && el.offsetParent !== null) {
-                  Plotly.Plots.resize(id); 
-                }
-              } catch (resizeErr) {
-                // Silently ignore resize errors (plot may not be initialized yet)
-              } 
+            .forEach(id => {
+              const el = document.getElementById(id);
+              if (el && el.offsetParent !== null) Plotly.Plots.resize(id);
             });
         } catch {}
       });
