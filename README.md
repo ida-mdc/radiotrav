@@ -35,7 +35,7 @@ Restart your terminal after installing so `uv` is on your `PATH`.
 Clone this repository and `cd` into the project folder:
 
 ```bash
-git clone https://gitlab.com/ida-mdc/radiotrav.git
+git clone https://github.com/ida-mdc/radiotrav.git
 cd radiotrav
 ```
 

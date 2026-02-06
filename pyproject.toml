@@ -2,7 +2,7 @@
 name = "radiotrav"
 version = "0.1.0"
 description = "Time Resolved Autoradiography Visualization for Nuclear Radiation"
-authors = [{name="Your Name"}]
+authors = [{name="Walter Geibert, Deborah Schmidt"}]
 requires-python = ">=3.9"
 
 dependencies = [
