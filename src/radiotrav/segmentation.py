@@ -4,6 +4,52 @@ import imageio.v3 as iio
 
 
 # ============================================================
+# HOT PIXEL DETECTION
+# ============================================================
+
+def detect_hot_pixels(x, y, percentile=99, multiplier=50):
+    """
+    Detect pixels with abnormally high event counts (dead/noisy pixels).
+
+    A pixel is flagged when its event count exceeds
+    percentile(active_counts, `percentile`) * `multiplier`.
+
+    The reference point is the `percentile`-th percentile of counts across
+    all pixels that fired at least once. A pixel must fire `multiplier` times
+    more than that reference to be considered a hot pixel.
+
+    Default (percentile=99, multiplier=50): flags pixels firing 50× more than
+    the 99th-percentile pixel — conservative enough to skip borderline cases.
+
+    Args:
+        x, y:        Integer coordinate arrays (shape N).
+        percentile:  Percentile of active-pixel counts used as the reference.
+        multiplier:  How many times above the reference a pixel must be to be flagged.
+
+    Returns:
+        event_mask:  bool array (shape N), True for events at hot pixels.
+        threshold:   float, the count threshold that was applied.
+        hot_coords:  list of (x, y, count) tuples for each flagged pixel.
+    """
+    pixel_idx = y.astype(np.int32) * 256 + x.astype(np.int32)
+    counts = np.bincount(pixel_idx, minlength=256 * 256)
+
+    active = counts[counts > 0]
+    threshold = np.percentile(active, percentile) * multiplier
+
+    hot_flat = counts >= threshold
+    event_mask = hot_flat[pixel_idx]
+
+    hot_indices = np.flatnonzero(hot_flat)
+    hot_coords = [
+        (int(idx % 256), int(idx // 256), int(counts[idx]))
+        for idx in hot_indices
+    ]
+
+    return event_mask, float(threshold), hot_coords
+
+
+# ============================================================
 # UNION-FIND UTILS
 # ============================================================
 

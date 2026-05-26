@@ -85,12 +85,77 @@ See the [Command Reference](#command-reference) below for all options.
 
 ### 2. Dashboard
 
-Open `docs/dashboard/index.html` in your web browser. Load the three generated files from your output directory:
-- **segmented.txt** - Events with cluster assignments
-- **classification.csv** - Classification results
-- **chains.csv** - Sequence/chain analysis results
+The dashboard is a single-page web app. You can open it in two ways:
 
-The dashboard provides classification plots, galleries, sequence analysis, and an interactive event viewer.
+- **Hosted version (no install needed):** [https://ida-mdc.github.io/radiotrav/dashboard/](https://ida-mdc.github.io/radiotrav/dashboard/)
+- **Local version:** open `docs/dashboard/index.html` from this repository in your browser
+
+All file loading happens client-side — no data is uploaded anywhere.
+
+#### Loading files
+
+Use the three file pickers in the top-right header to load the outputs from `radiotrav process`:
+
+| Field | File | Required for |
+|---|---|---|
+| segmented.txt (events) | `segmented.txt` | Event viewer |
+| classification.csv | `classification.csv` | Classification tabs, viewer coloring |
+| chains.csv | `chains.csv` | Sequence tabs |
+
+Files can be loaded in any order and independently.
+
+#### Global filters
+
+The filter bar below the header applies to all tabs and the event viewer simultaneously:
+
+- **Classification** — show only one radiation type (Alpha / Beta / Gamma / Other) or all
+- **Sequence pattern filter** — text filter on chain signatures, e.g. `Beta - Alpha`; toggle *full match* to require an exact match instead of a substring match
+- **Max Δt (s)** — exclude chains where any step exceeds this time gap
+- **Max Δd (px)** — exclude chains where any step exceeds this spatial distance
+- **Reset filters** — clears all filters and selections
+
+The status bar on the left of the filter row shows `events: N | clusters: N | chains: N`, updating as filters change.
+
+#### Left panel tabs
+
+**Classification Plots** — aggregated statistics for the loaded classification data:
+- Summary counts (total clusters, counts per radiation type, mean energy)
+- Bar chart: number of clusters per class
+- Histogram: energy (ToT) distribution, grouped by radiation type
+- Histogram: max radius distribution, grouped by radiation type
+
+**Classification Gallery** — thumbnail grid of individual clusters:
+- Sort by any numeric column (energy, radius, etc.), ascending or descending
+- Switch between *Grid* (image + label) and *Compact* (image-only mosaic) layouts
+- Click any cluster to jump the event viewer to that cluster's position in time
+
+**Sequence Plots** — aggregated statistics for decay chains:
+- Bar chart: most frequent chain patterns (e.g. `Alpha - Beta`)
+- Histogram: chain lengths
+- Histogram: time gaps between events within chains
+
+**Sequence Gallery** — when a sequence filter is active, shows individual matching chains; otherwise shows aggregated patterns grouped by signature:
+- Click a pattern or chain to select it; the event viewer and classification gallery update to show only those clusters
+
+#### Event viewer (right panel)
+
+The event viewer shows the detector as a 256×256 pixel canvas, animated over time.
+
+- **View mode:**
+  - *Animated (fade)* — events fade in and out around the current time center
+  - *Animated (sum)* — events accumulate within the time window
+  - *Max projection* / *Sum projection* — static image over the full dataset
+- **Display mode:**
+  - *Classification* — pixels colored by cluster type (red = Alpha, cyan = Beta, green = Gamma, grey = Other)
+  - *Energy (ToT)* — pixels colored by Time-over-Threshold value
+  - *Density* — pixels colored by event count
+  - *Time* — pixels colored by arrival time
+- **Colormap** — selectable for Energy, Density, and Time modes (Turbo, Viridis, Plasma, etc.)
+- **Time center / Window size** — scrub through time and control how wide a time slice is shown
+- **Speed** — controls playback rate; drag the slider or press Play
+- **Fullscreen** — the ⛶ button in the top-right corner of the canvas
+
+The **Processing Metadata** card below the viewer shows the segmentation and classification parameters that were embedded in the CSV files, so you always know how the data was produced.
 
 ### 3. Video Rendering
 
@@ -128,6 +193,35 @@ uv sync
 uv pip install -e .
 ```
 
+### Pipeline Steps
+
+The `process` command runs the following steps in order:
+
+#### 1. Hot pixel masking
+
+Before segmentation, pixels that fire far more often than the rest of the detector are identified as dead or noisy and removed. The threshold is **50 × the 99th percentile** of per-pixel event counts across the whole dataset: a pixel must fire at least 50× more than a normally-busy pixel to be masked. The masked pixels and their event counts are written to `hot_pixels.csv` in the output directory. This step can be disabled with `--no-hot-pixel-filter`.
+
+#### 2. Spatiotemporal segmentation
+
+Events are grouped into clusters by linking each event to any neighbour that fired within `--spatial-radius` pixels and `--time-window` nanoseconds of it. The result is written to `segmented.txt`.
+
+#### 3. Cluster classification
+
+Each cluster is described by its shape (bounding box, pixel area, maximum inscribed-circle radius, geometric roundness) and classified as one of:
+
+- **Gamma** — small spot (area ≤ `--gamma-max-area`)
+- **Alpha** — large, round, thick deposit (`max_radius > --alpha-min-radius` and `roundness > --alpha-min-roundness`)
+- **Beta** — elongated thin track (`max_radius < --beta-max-radius` and at least one dimension > `--beta-min-dimension`)
+- **Other** — anything that does not fit the above
+
+Results are written to `classification.csv`.
+
+#### 4. Sequence analysis
+
+Clusters that are spatially and temporally close to each other are linked into chains (decay sequences). Chains are written to `chains.csv`.
+
+---
+
 ### Command Reference {#command-reference}
 
 All commands are invoked as `uv run radiotrav <command> ...`.
@@ -146,6 +240,7 @@ Run the complete pipeline: segmentation, classification, and sequence analysis.
   - `--sequence-pattern-lookup [PATH]`: CSV file with pattern definitions for sequence matching.
   - `--start-row [INT]` (default: `0`): first input row to load.
   - `--n-rows [INT]` (default: all): number of rows to process.
+  - `--no-hot-pixel-filter`: skip the hot pixel masking step (see [Pipeline Steps](#pipeline-steps)).
   - `--skip-existing-segmentation`: skip segmentation if `segmented.txt` already exists in output directory.
   - `--skip-existing-classification`: skip classification if `classification.csv` already exists in output directory.
   - **Classification parameters:**

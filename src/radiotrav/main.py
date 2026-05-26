@@ -14,7 +14,7 @@ from radiotrav.render import (
     render_yt_discrete,
     render_xy_discrete,
 )
-from radiotrav.segmentation import segment_events_spatiotemporal
+from radiotrav.segmentation import segment_events_spatiotemporal, detect_hot_pixels
 from radiotrav.sequences import find_sequences
 
 
@@ -236,12 +236,33 @@ def cli():
     pass
 
 
-def _run_segment(input_file, output_txt, time_window, spatial_radius, start_row, n_rows):
+def _run_segment(input_file, output_txt, time_window, spatial_radius, start_row, n_rows,
+                 filter_hot_pixels=True):
     """
     Core implementation for segmentation (no Click dependencies).
     Used by the `process` pipeline.
     """
     t, x, y, tot = load_data_as_arrays(input_file, 1.0, None, start_row, n_rows)
+
+    if filter_hot_pixels:
+        event_is_hot, used_threshold, hot_coords = detect_hot_pixels(x, y)
+        n_hot_events = int(event_is_hot.sum())
+        click.echo(f"Hot pixel detection: threshold = {used_threshold:.1f} events/pixel")
+        click.echo(f"  Found {len(hot_coords)} hot pixel(s), masking {n_hot_events} events "
+                   f"({n_hot_events / len(t) * 100:.1f}% of dataset)")
+        for hx, hy, hcount in sorted(hot_coords, key=lambda c: -c[2]):
+            click.echo(f"  Pixel ({hx:3d}, {hy:3d}): {hcount} events")
+
+        out_dir = Path(output_txt).parent
+        hot_df = pd.DataFrame(hot_coords, columns=["x", "y", "event_count"])
+        hot_df["threshold"] = used_threshold
+        hot_csv = out_dir / "hot_pixels.csv"
+        hot_df.to_csv(hot_csv, index=False)
+        click.echo(f"  Hot pixel map saved to {hot_csv}")
+
+        keep = ~event_is_hot
+        t, x, y, tot = t[keep], x[keep], y[keep], tot[keep]
+        click.echo(f"  {len(t)} events remaining after masking.")
 
     click.echo(f"Segmenting {len(t)} events...")
     cluster_ids = segment_events_spatiotemporal(t, x, y, time_window, spatial_radius)
@@ -765,6 +786,12 @@ def render(input_path, output_file, classification_csv, chains_csv, radiation, s
 @click.option("--start-row", default=0, help="Row index to start (for all steps).")
 @click.option("--n-rows", default=None, type=int, help="Number of rows to process (for all steps).")
 @click.option(
+    "--no-hot-pixel-filter",
+    is_flag=True,
+    default=False,
+    help="Disable automatic hot pixel masking.",
+)
+@click.option(
     "--skip-existing-segmentation",
     is_flag=True,
     help="If set, skip segmentation if segmented.txt already exists in output directory. Useful when segmentation is expensive and you only want to redo classification/sequences.",
@@ -815,6 +842,7 @@ def process(
     sequence_pattern_lookup,
     start_row,
     n_rows,
+    no_hot_pixel_filter,
     skip_existing_segmentation,
     skip_existing_classification,
     gamma_max_area,
@@ -872,6 +900,7 @@ def process(
             spatial_radius=spatial_radius,
             start_row=start_row,
             n_rows=n_rows,
+            filter_hot_pixels=not no_hot_pixel_filter,
         )
 
     # 2) CLASSIFY
